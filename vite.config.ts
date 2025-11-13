@@ -1,34 +1,38 @@
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
+
+// Standard ESM-friendly __dirname replacement
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+
 export default defineConfig({
-  // 👇 Add this line:
+  // 👇 This MUST match your repo name exactly
   base: "/BibleStudyApp/",
 
   plugins: [
     react(),
-    runtimeErrorOverlay(),
-    ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
-      ? [
-          await import("@replit/vite-plugin-cartographer").then((m) =>
-            m.cartographer(),
-          ),
-          await import("@replit/vite-plugin-dev-banner").then((m) =>
-            m.devBanner(),
-          ),
-        ]
-      : []),
+    // (We intentionally removed the Replit-only plugins:
+    // runtimeErrorOverlay, cartographer, devBanner)
   ],
+
   resolve: {
     alias: {
-      "@": path.resolve(import.meta.dirname, "client", "src"),
-      "@shared": path.resolve(import.meta.dirname, "shared"),
-      "@assets": path.resolve(import.meta.dirname, "attached_assets"),
+      "@": resolve(__dirname, "client", "src"),
+      "@shared": resolve(__dirname, "shared"),
+      "@assets": resolve(__dirname, "attached_assets"),
     },
   },
-  root: path.resolve(import.meta.dirname, "client"),
+
+  // Your app's source lives in /client
+  root: resolve(__dirname, "client"),
+
+  // We still output into dist/public like you had before
   build: {
-    outDir: path.resolve(import.meta.dirname, "dist/public"),
+    outDir: resolve(__dirname, "dist/public"),
     emptyOutDir: true,
   },
+
   server: {
     fs: {
       strict: true,
