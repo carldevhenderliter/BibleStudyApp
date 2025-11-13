@@ -393,8 +393,118 @@ export const bibleBooks = [
   { name: "Revelation", chapters: 22, testament: "New" },
 ];
 
-export function getVersesByChapter(book: string, chapter: number, translation: Translation = 'KJV'): BibleVerseWithTokens[] {
-  return translationData[translation].filter(v => v.book === book && v.chapter === chapter);
+// Map book names to filename slugs used for your per-book JSONs
+const bookSlugMap: Record<string, string> = {
+  // Old Testament
+  Genesis: "genesis",
+  Exodus: "exodus",
+  Leviticus: "leviticus",
+  Numbers: "numbers",
+  Deuteronomy: "deuteronomy",
+  Joshua: "joshua",
+  Judges: "judges",
+  Ruth: "ruth",
+  "1 Samuel": "1-samuel",
+  "2 Samuel": "2-samuel",
+  "1 Kings": "1-kings",
+  "2 Kings": "2-kings",
+  "1 Chronicles": "1-chronicles",
+  "2 Chronicles": "2-chronicles",
+  Ezra: "ezra",
+  Nehemiah: "nehemiah",
+  Esther: "esther",
+  Job: "job",
+  Psalms: "psalms",
+  Proverbs: "proverbs",
+  Ecclesiastes: "ecclesiastes",
+  "Song of Solomon": "song-of-solomon",
+  Isaiah: "isaiah",
+  Jeremiah: "jeremiah",
+  Lamentations: "lamentations",
+  Ezekiel: "ezekiel",
+  Daniel: "daniel",
+  Hosea: "hosea",
+  Joel: "joel",
+  Amos: "amos",
+  Obadiah: "obadiah",
+  Jonah: "jonah",
+  Micah: "micah",
+  Nahum: "nahum",
+  Habakkuk: "habakkuk",
+  Zephaniah: "zephaniah",
+  Haggai: "haggai",
+  Zechariah: "zechariah",
+  Malachi: "malachi",
+  // New Testament
+  Matthew: "matthew",
+  Mark: "mark",
+  Luke: "luke",
+  John: "john",
+  Acts: "acts",
+  Romans: "romans",
+  "1 Corinthians": "1-corinthians",
+  "2 Corinthians": "2-corinthians",
+  Galatians: "galatians",
+  Ephesians: "ephesians",
+  Philippians: "philippians",
+  Colossians: "colossians",
+  "1 Thessalonians": "1-thessalonians",
+  "2 Thessalonians": "2-thessalonians",
+  "1 Timothy": "1-timothy",
+  "2 Timothy": "2-timothy",
+  Titus: "titus",
+  Philemon: "philemon",
+  Hebrews: "hebrews",
+  James: "james",
+  "1 Peter": "1-peter",
+  "2 Peter": "2-peter",
+  "1 John": "1-john",
+  "2 John": "2-john",
+  "3 John": "3-john",
+  Jude: "jude",
+  Revelation: "revelation",
+};
+
+const kjvBookCache = new Map<string, BibleVerseWithTokens[]>();
+
+async function loadKjvStrongsForBook(book: string): Promise<BibleVerseWithTokens[]> {
+  if (kjvBookCache.has(book)) {
+    return kjvBookCache.get(book)!;
+  }
+
+  const slug = bookSlugMap[book];
+  if (!slug) {
+    throw new Error(`Unknown book: ${book}`);
+  }
+
+  // These files should come from client/public/strongs/
+  // e.g. client/public/strongs/bible-kjv-strongs-genesis.json
+  const res = await fetch(`/strongs/bible-kjv-strongs-${slug}.json`);
+
+  if (!res.ok) {
+    throw new Error(`Failed to load KJV Strong's data for ${book}`);
+  }
+
+  const data = (await res.json()) as BibleVerseWithTokens[];
+  kjvBookCache.set(book, data);
+  return data;
+}
+
+
+export async function getVersesByChapter(
+  book: string,
+  chapter: number,
+  translation: Translation = "KJV"
+): Promise<BibleVerseWithTokens[]> {
+  if (translation === "KJV") {
+    const allVerses = await loadKjvStrongsForBook(book);
+    return allVerses.filter((v) => v.chapter === chapter);
+  }
+
+  // For ESV / NASB we still use the small in-file arrays
+  return translationData[translation].filter(
+    (v) => v.book === book && v.chapter === chapter
+  );
 }
 
 export const translations: { id: Translation; name: string; fullName: string }[] = [
