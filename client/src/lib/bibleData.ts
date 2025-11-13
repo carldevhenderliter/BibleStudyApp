@@ -468,18 +468,16 @@ const bookSlugMap: Record<string, string> = {
 const kjvBookCache = new Map<string, BibleVerseWithTokens[]>();
 
 async function loadKjvStrongsForBook(book: string): Promise<BibleVerseWithTokens[]> {
-  if (kjvBookCache.has(book)) {
-    return kjvBookCache.get(book)!;
-  }
+  if (kjvBookCache.has(book)) return kjvBookCache.get(book)!;
 
   const slug = bookSlugMap[book];
-  if (!slug) {
-    throw new Error(`Unknown book: ${book}`);
-  }
+  if (!slug) throw new Error(`Unknown book: ${book}`);
 
-  // These files should come from client/public/strongs/
-  // e.g. client/public/strongs/bible-kjv-strongs-genesis.json
-  const res = await fetch(`/strongs/bible-kjv-strongs-${slug}.json`);
+  const base = import.meta.env.BASE_URL; // "/BibleStudyApp/" on Pages, "/" in dev
+
+  const res = await fetch(
+    `${base}strongs/bible-kjv-strongs-${slug}.json`
+  );
 
   if (!res.ok) {
     throw new Error(`Failed to load KJV Strong's data for ${book}`);
@@ -489,6 +487,7 @@ async function loadKjvStrongsForBook(book: string): Promise<BibleVerseWithTokens
   kjvBookCache.set(book, data);
   return data;
 }
+
 
 
 export async function getVersesByChapter(
