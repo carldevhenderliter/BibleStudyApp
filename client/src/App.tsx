@@ -10,7 +10,13 @@ import NotFound from "@/pages/not-found";
 function Router() {
   return (
     <Switch>
+      {/* For local dev (Vite at /) */}
       <Route path="/" component={Home} />
+
+      {/* For GitHub Pages (served at /BibleStudyApp/) */}
+      <Route path="/BibleStudyApp/" component={Home} />
+
+      {/* Fallback */}
       <Route component={NotFound} />
     </Switch>
   );
