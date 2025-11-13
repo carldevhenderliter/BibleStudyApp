@@ -314,7 +314,7 @@ const nasbData: BibleVerseWithTokens[] = [
 ];
 
 // Use complete KJV data with integrated Strong's numbers from kaiserlik/kjv
-const kjvData: BibleVerseWithTokens[] = kjvStrongsData as BibleVerseWithTokens[];
+
 
 const translationData: Record<Translation, BibleVerseWithTokens[]> = {
   KJV: kjvData,
