@@ -60,26 +60,65 @@ export function BibleReader({
   const { toast } = useToast();
 
   useEffect(() => {
-    const loadedVerses = getVersesByChapter(book, chapter, selectedTranslation);
-    setVerses(loadedVerses);
-    
-    const savedHighlights = localStorage.getItem('bible-highlights');
-    const savedNotes = localStorage.getItem('bible-notes');
-    if (savedHighlights) {
-      const parsedHighlights = JSON.parse(savedHighlights);
-      setHighlights(parsedHighlights.map((h: Highlight) => ({
-        ...h,
-        wordIndex: typeof h.wordIndex === 'string' ? parseInt(h.wordIndex, 10) : h.wordIndex,
-      })));
+  let cancelled = false;
+
+  (async () => {
+    try {
+      // Load verses (now async)
+      const loadedVerses = await getVersesByChapter(
+        book,
+        chapter,
+        selectedTranslation
+      );
+
+      if (!cancelled) {
+        setVerses(loadedVerses);
+
+        // Then load highlights / notes from localStorage
+        const savedHighlights = localStorage.getItem("bible-highlights");
+        const savedNotes = localStorage.getItem("bible-notes");
+
+        if (savedHighlights) {
+          const parsedHighlights = JSON.parse(savedHighlights);
+          setHighlights(
+            parsedHighlights.map((h: Highlight) => ({
+              ...h,
+              wordIndex:
+                typeof h.wordIndex === "string"
+                  ? parseInt(h.wordIndex, 10)
+                  : h.wordIndex,
+            }))
+          );
+        }
+
+        if (savedNotes) {
+          const parsedNotes = JSON.parse(savedNotes);
+          setNotes(
+            parsedNotes.map((n: Note) => ({
+              ...n,
+              wordIndex:
+                typeof n.wordIndex === "string"
+                  ? parseInt(n.wordIndex, 10)
+                  : n.wordIndex,
+            }))
+          );
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: "Error loading verses",
+        description:
+          err instanceof Error ? err.message : "Failed to load Bible text.",
+        variant: "destructive",
+      });
     }
-    if (savedNotes) {
-      const parsedNotes = JSON.parse(savedNotes);
-      setNotes(parsedNotes.map((n: Note) => ({
-        ...n,
-        wordIndex: typeof n.wordIndex === 'string' ? parseInt(n.wordIndex, 10) : n.wordIndex,
-      })));
-    }
-  }, [book, chapter, selectedTranslation]);
+  })();
+
+  return () => {
+    cancelled = true;
+  };
+}, [book, chapter, selectedTranslation, toast]);
 
   const handleTextSelect = (verseId: string, text: string) => {
     const selection = window.getSelection();
