@@ -8,7 +8,7 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
   // 👇 This MUST match your repo name exactly
-  base: "/BibleStudyApp/",
+  base: "carldevhenderliter/BibleStudyApp/",
 
   plugins: [
     react(),
