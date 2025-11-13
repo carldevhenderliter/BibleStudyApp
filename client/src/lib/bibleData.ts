@@ -317,7 +317,7 @@ const nasbData: BibleVerseWithTokens[] = [
 
 
 const translationData: Record<Translation, BibleVerseWithTokens[]> = {
-  KJV: kjvData,
+  KJV: kjvWithStrongsData, // small sample, NOT the giant JSON
   ESV: esvData,
   NASB: nasbData,
 };
