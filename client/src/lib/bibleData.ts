@@ -1,5 +1,5 @@
 import { BibleVerse } from "@shared/schema";
-import kjvStrongsData from './bible-kjv-strongs.json';
+
 
 export type WordToken = {
   english: string;
