@@ -27,26 +27,34 @@ export function StrongDefinitions({
   onClose,
 }: StrongDefinitionsProps) {
   const [currentDef, setCurrentDef] = useState<StrongsDefinition | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const totalCount = strongsNumbers.length;
 
   // Load the current Strong's definition whenever dialog opens or index changes
   useEffect(() => {
     if (!open || totalCount === 0) {
       setCurrentDef(null);
+      setError(null);
       return;
     }
 
     let cancelled = false;
 
     (async () => {
-      // Guard against out-of-range index
+      setCurrentDef(null);
+      setError(null);
+
       const safeIndex =
         activeIndex >= 0 && activeIndex < totalCount ? activeIndex : 0;
       const number = strongsNumbers[safeIndex];
 
       const def = await loadStrongsDefinition(number);
 
-      if (!cancelled) {
+      if (cancelled) return;
+
+      if (!def) {
+        setError(`No definition found for ${number}`);
+      } else {
         setCurrentDef(def);
       }
     })();
@@ -56,7 +64,6 @@ export function StrongDefinitions({
     };
   }, [open, activeIndex, strongsNumbers, totalCount]);
 
-  // If there are no Strong's numbers at all, don't render the dialog
   if (totalCount === 0) {
     return null;
   }
@@ -110,7 +117,9 @@ export function StrongDefinitions({
           </div>
         )}
 
-        {!currentDef ? (
+        {error ? (
+          <p className="text-sm text-red-500 py-4">{error}</p>
+        ) : !currentDef ? (
           <p className="text-sm text-muted-foreground py-4">
             Loading Strong&apos;s definition…
           </p>
@@ -123,37 +132,47 @@ export function StrongDefinitions({
               <span className="text-lg font-mono text-primary font-semibold">
                 {currentDef.number}
               </span>
+
               {currentDef.lemma && (
-    <span className="text-lg font-semibold">{currentDef.lemma}</span>
+                <span className="text-lg font-semibold">
+                  {currentDef.lemma}
+                </span>
+              )}
+
               <span className="text-lg font-semibold">
                 {currentDef.transliteration}
               </span>
+
               {currentDef.pronunciation && (
                 <span className="text-sm text-muted-foreground italic">
                   ({currentDef.pronunciation})
                 </span>
               )}
+
               {currentDef.partOfSpeech && (
                 <span className="text-sm text-muted-foreground px-2 py-0.5 bg-muted rounded">
                   {currentDef.partOfSpeech}
                 </span>
               )}
             </div>
+
             <p className="text-base mb-2">
               <span className="font-semibold">Definition:</span>{" "}
               {currentDef.definition}
             </p>
+
             {currentDef.usage && (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground mb-2">
                 {currentDef.usage}
               </p>
             )}
-      {currentDef.derivation && (
-  <p className="text-sm text-muted-foreground italic">
-    <span className="font-semibold not-italic">Derivation:</span>{" "}
-    {currentDef.derivation}
-  </p>
-)}
+
+            {currentDef.derivation && (
+              <p className="text-sm text-muted-foreground italic">
+                <span className="font-semibold not-italic">Derivation:</span>{" "}
+                {currentDef.derivation}
+              </p>
+            )}
           </div>
         )}
       </DialogContent>
