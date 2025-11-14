@@ -375,19 +375,18 @@ export function BibleReader({
                 return (
                   <span key={verse.id}>
                     {/* Inline Strong's definition here too */}
-                        {selectedStrong &&
-                          selectedStrong.verseId === verse.id && (
-                            <StrongDefinitionInline
-                              strongsNumbers={selectedStrong.strongsNumbers}
-                              activeIndex={selectedStrong.activeIndex}
-                              onActiveIndexChange={(index) =>
-                                setSelectedStrong({
-                                  ...selectedStrong,
-                                  activeIndex: index,
-                                })
-                              }
-                            />
-                          )}
+                        {selectedStrong && selectedStrong.verseId === verse.id && (
+      <StrongDefinitionInline
+        strongsNumbers={selectedStrong.strongsNumbers}
+        activeIndex={selectedStrong.activeIndex}
+        onActiveIndexChange={(index) =>
+          setSelectedStrong({
+            ...selectedStrong,
+            activeIndex: index,
+          })
+        }
+      />
+    )}
                     <VerseDisplay
                       verse={verse}
                       highlight={verseHighlight}
