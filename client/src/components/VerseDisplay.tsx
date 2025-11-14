@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { BibleVerse, Highlight, Note } from '@shared/schema';
-import { Button } from '@/components/ui/button';
-import { Plus, StickyNote } from 'lucide-react';
+// src/components/VerseDisplay.tsx
+import { useState } from "react";
+import { BibleVerse, Highlight, Note } from "@shared/schema";
+import { Button } from "@/components/ui/button";
+import { Plus, StickyNote } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -12,7 +13,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { BibleVerseWithTokens } from '@/lib/bibleData';
+import { BibleVerseWithTokens } from "@/lib/bibleData";
 
 interface VerseDisplayProps {
   verse: BibleVerse;
@@ -21,7 +22,7 @@ interface VerseDisplayProps {
   showStrongsNumbers: boolean;
   showInterlinear: boolean;
   showNotes: boolean;
-  displayMode: 'verse' | 'book';
+  displayMode: "verse" | "book";
   showWordByWord: boolean;
   onAddNote: () => void;
   onAddWordNote: (wordIndex: number, wordText: string) => void;
@@ -32,20 +33,19 @@ interface VerseDisplayProps {
   onStrongClick: (strongNumber: string) => void;
   wordNotes: Note[];
   activeWordNote: { verseId: string; wordIndex: number; wordText?: string } | null;
-  /** The currently selected Strong's number for chapter-wide highlighting */
-  activeStrongNumber?: string;
+  activeStrongNumber?: string; // 🔥 highlight all matching Strong’s in this chapter
 }
 
 const highlightColorMap = {
-  yellow: 'bg-yellow-200/60 dark:bg-yellow-500/30',
-  blue: 'bg-blue-200/60 dark:bg-blue-500/30',
-  green: 'bg-green-200/60 dark:bg-green-500/30',
-  pink: 'bg-pink-200/60 dark:bg-pink-500/30',
-  purple: 'bg-purple-200/60 dark:bg-purple-500/30',
-  orange: 'bg-orange-200/60 dark:bg-orange-500/30',
-  red: 'bg-red-200/60 dark:bg-red-500/30',
-  cyan: 'bg-cyan-200/60 dark:bg-cyan-500/30',
-  gray: 'bg-gray-200/60 dark:bg-gray-500/30',
+  yellow: "bg-yellow-200/60 dark:bg-yellow-500/30",
+  blue: "bg-blue-200/60 dark:bg-blue-500/30",
+  green: "bg-green-200/60 dark:bg-green-500/30",
+  pink: "bg-pink-200/60 dark:bg-pink-500/30",
+  purple: "bg-purple-200/60 dark:bg-purple-500/30",
+  orange: "bg-orange-200/60 dark:bg-orange-500/30",
+  red: "bg-red-200/60 dark:bg-red-500/30",
+  cyan: "bg-cyan-200/60 dark:bg-cyan-500/30",
+  gray: "bg-gray-200/60 dark:bg-gray-500/30",
 };
 
 export function VerseDisplay({
@@ -69,7 +69,6 @@ export function VerseDisplay({
   activeStrongNumber,
 }: VerseDisplayProps) {
   const [showAddButton, setShowAddButton] = useState(false);
-  const [noteContent, setNoteContent] = useState('');
 
   const handleMouseUp = () => {
     const selection = window.getSelection();
@@ -79,50 +78,45 @@ export function VerseDisplay({
     }
   };
 
-  const highlightClass = highlight ? highlightColorMap[highlight.color] : '';
+  const highlightClass = highlight ? highlightColorMap[highlight.color] : "";
 
   const verseWithTokens = verse as BibleVerseWithTokens;
 
   const hasWordNote = (wordIndex: number) => {
-    return wordNotes.some(note => note.wordIndex === wordIndex);
+    return wordNotes.some((note) => note.wordIndex === wordIndex);
   };
 
   const getWordNote = (wordIndex: number) => {
-    return wordNotes.find(note => Number(note.wordIndex) === wordIndex);
+    return wordNotes.find((note) => Number(note.wordIndex) === wordIndex);
   };
 
   const getWordHighlight = (wordIndex: number) => {
-    return wordHighlights.find(h => h.wordIndex === wordIndex);
+    return wordHighlights.find((h) => h.wordIndex === wordIndex);
   };
 
-  const isTokenMatchingActiveStrong = (token: any): boolean => {
-    if (!activeStrongNumber) return false;
-    if (!token.strongs) return false;
-
-    if (Array.isArray(token.strongs)) {
-      return token.strongs.includes(activeStrongNumber);
+  const isTokenStrongActive = (tokenStrong: string | string[] | undefined) => {
+    if (!activeStrongNumber || !tokenStrong) return false;
+    if (Array.isArray(tokenStrong)) {
+      return tokenStrong.includes(activeStrongNumber);
     }
-    return token.strongs === activeStrongNumber;
+    return tokenStrong === activeStrongNumber;
   };
 
-  const strongHighlightClass =
-    'bg-primary/25 dark:bg-primary/30 ring-1 ring-primary/40 rounded-sm';
-
-  // --- BOOK MODE, NO WORD-BY-WORD ---
-  if (displayMode === 'book' && !showWordByWord) {
+  // BOOK MODE, plain text
+  if (displayMode === "book" && !showWordByWord) {
     return (
       <span
         className={`font-serif text-base leading-relaxed ${highlightClass} inline`}
         onMouseUp={handleMouseUp}
         data-testid={`verse-${verse.id}`}
       >
-        {verse.text}{' '}
+        {verse.text}{" "}
       </span>
     );
   }
 
-  // --- BOOK MODE, WORD-BY-WORD ---
-  if (displayMode === 'book' && showWordByWord) {
+  // BOOK MODE, word-by-word
+  if (displayMode === "book" && showWordByWord) {
     return (
       <div
         className="inline-flex flex-wrap gap-x-3 gap-y-6 mr-2"
@@ -137,11 +131,15 @@ export function VerseDisplay({
           const wordHighlight = getWordHighlight(idx);
           const wordHighlightClass = wordHighlight
             ? highlightColorMap[wordHighlight.color]
-            : '';
-          const isActiveStrong = isTokenMatchingActiveStrong(token);
+            : "";
+
+          const strongActive = isTokenStrongActive(token.strongs);
 
           return (
-            <div key={idx} className="inline-flex flex-col items-center gap-1">
+            <div
+              key={idx}
+              className="inline-flex flex-col items-center gap-1"
+            >
               <Popover>
                 <PopoverTrigger asChild>
                   <div
@@ -150,12 +148,15 @@ export function VerseDisplay({
                   >
                     <span
                       className={[
-                        'font-serif text-base rounded transition-colors',
-                        hasData ? 'px-1' : '',
+                        "font-serif text-base rounded transition-colors",
+                        hasData ? "px-1" : "",
                         wordHighlightClass,
-                        isActiveStrong ? strongHighlightClass : '',
-                        'group-hover:bg-accent/50',
-                      ].join(' ')}
+                        strongActive
+                          ? "ring-2 ring-primary/60 bg-primary/10"
+                          : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
                     >
                       {token.english}
                     </span>
@@ -182,7 +183,8 @@ export function VerseDisplay({
                             </TooltipTrigger>
                             <TooltipContent>
                               <p className="text-xs">
-                                Strong&apos;s {strongNum} - Click to view definition
+                                Strong&apos;s {strongNum} - Click to view
+                                definition
                               </p>
                             </TooltipContent>
                           </Tooltip>
@@ -210,7 +212,7 @@ export function VerseDisplay({
                       data-testid={`button-add-word-note-${verse.id}-${idx}`}
                     >
                       <StickyNote className="h-3 w-3 mr-2" />
-                      {wordNote ? 'View/Edit Note' : 'Add Note'}
+                      {wordNote ? "View/Edit Note" : "Add Note"}
                     </Button>
                   )}
                   <div className="space-y-1">
@@ -220,15 +222,15 @@ export function VerseDisplay({
                     <div className="flex gap-1 flex-wrap px-2">
                       {(
                         [
-                          'yellow',
-                          'blue',
-                          'green',
-                          'pink',
-                          'purple',
-                          'orange',
-                          'red',
-                          'cyan',
-                          'gray',
+                          "yellow",
+                          "blue",
+                          "green",
+                          "pink",
+                          "purple",
+                          "orange",
+                          "red",
+                          "cyan",
+                          "gray",
                         ] as const
                       ).map((color) => (
                         <button
@@ -242,8 +244,8 @@ export function VerseDisplay({
                             highlightColorMap[color]
                           } border-2 ${
                             wordHighlight?.color === color
-                              ? 'border-foreground'
-                              : 'border-transparent'
+                              ? "border-foreground"
+                              : "border-transparent"
                           } hover:scale-110 transition-transform`}
                           data-testid={`button-highlight-${color}-${verse.id}-${idx}`}
                           aria-label={`Highlight ${color}`}
@@ -274,7 +276,7 @@ export function VerseDisplay({
     );
   }
 
-  // --- VERSE MODE ---
+  // VERSE MODE
   return (
     <div
       className="group relative py-3"
@@ -300,8 +302,9 @@ export function VerseDisplay({
                 const wordHighlight = getWordHighlight(idx);
                 const wordHighlightClass = wordHighlight
                   ? highlightColorMap[wordHighlight.color]
-                  : '';
-                const isActiveStrong = isTokenMatchingActiveStrong(token);
+                  : "";
+
+                const strongActive = isTokenStrongActive(token.strongs);
 
                 return (
                   <div
@@ -311,17 +314,20 @@ export function VerseDisplay({
                     <Popover>
                       <PopoverTrigger asChild>
                         <div
-                          className={`inline-flex flex-col items-center gap-0.5 group/word cursor-pointer relative`}
+                          className="inline-flex flex-col items-center gap-0.5 group/word cursor-pointer relative"
                           data-testid={`word-${verse.id}-${idx}`}
                         >
                           <span
                             className={[
-                              'font-serif text-base rounded transition-colors',
-                              hasData ? 'px-1' : '',
+                              "font-serif text-base rounded transition-colors",
+                              hasData ? "px-1" : "",
                               wordHighlightClass,
-                              isActiveStrong ? strongHighlightClass : '',
-                              'group-hover/word:bg-accent/50',
-                            ].join(' ')}
+                              strongActive
+                                ? "ring-2 ring-primary/60 bg-primary/10"
+                                : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
                           >
                             {token.english}
                           </span>
@@ -373,13 +379,11 @@ export function VerseDisplay({
                             size="sm"
                             variant="ghost"
                             className="w-full justify-start"
-                            onClick={() =>
-                              onAddWordNote(idx, token.english)
-                            }
+                            onClick={() => onAddWordNote(idx, token.english)}
                             data-testid={`button-add-word-note-${verse.id}-${idx}`}
                           >
                             <StickyNote className="h-3 w-3 mr-2" />
-                            {wordNote ? 'View/Edit Note' : 'Add Note'}
+                            {wordNote ? "View/Edit Note" : "Add Note"}
                           </Button>
                         )}
                         <div className="space-y-1">
@@ -389,15 +393,15 @@ export function VerseDisplay({
                           <div className="flex gap-1 flex-wrap px-2">
                             {(
                               [
-                                'yellow',
-                                'blue',
-                                'green',
-                                'pink',
-                                'purple',
-                                'orange',
-                                'red',
-                                'cyan',
-                                'gray',
+                                "yellow",
+                                "blue",
+                                "green",
+                                "pink",
+                                "purple",
+                                "orange",
+                                "red",
+                                "cyan",
+                                "gray",
                               ] as const
                             ).map((color) => (
                               <button
@@ -411,8 +415,8 @@ export function VerseDisplay({
                                   highlightColorMap[color]
                                 } border-2 ${
                                   wordHighlight?.color === color
-                                    ? 'border-foreground'
-                                    : 'border-transparent'
+                                    ? "border-foreground"
+                                    : "border-transparent"
                                 } hover:scale-110 transition-transform`}
                                 data-testid={`button-highlight-${color}-${verse.id}-${idx}`}
                                 aria-label={`Highlight ${color}`}
