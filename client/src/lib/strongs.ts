@@ -83,7 +83,6 @@ function mapRawToDefinition(
 ): StrongsDefinition | null {
   if (!raw) return null;
 
-  // Try multiple possible key names for each field, with sensible fallbacks.
   const transliteration =
     (raw.translit as string | undefined) ??
     (raw.transliteration as string | undefined) ??
@@ -96,11 +95,10 @@ function mapRawToDefinition(
     "";
 
   const partOfSpeech =
-  (raw.pos as string | undefined) ??
-  (raw.part as string | undefined) ??
-  (raw.partOfSpeech as string | undefined) ??
-  morphToPartOfSpeech(raw.morph as string | undefined);
-
+    (raw.pos as string | undefined) ??
+    (raw.part as string | undefined) ??
+    (raw.partOfSpeech as string | undefined) ??
+    ""; // stays empty – your JSON doesn't have this
 
   const definition =
     (raw.strongs_def as string | undefined) ??
@@ -119,8 +117,11 @@ function mapRawToDefinition(
     partOfSpeech,
     definition,
     usage,
+    lemma: raw.lemma as string | undefined,
+    derivation: raw.derivation as string | undefined,
   };
 }
+
 
 
 export async function loadStrongsDefinition(
