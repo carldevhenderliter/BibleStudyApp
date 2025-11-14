@@ -123,6 +123,8 @@ export function StrongDefinitions({
               <span className="text-lg font-mono text-primary font-semibold">
                 {currentDef.number}
               </span>
+              {currentDef.lemma && (
+    <span className="text-lg font-semibold">{currentDef.lemma}</span>
               <span className="text-lg font-semibold">
                 {currentDef.transliteration}
               </span>
@@ -146,6 +148,12 @@ export function StrongDefinitions({
                 {currentDef.usage}
               </p>
             )}
+      {currentDef.derivation && (
+  <p className="text-sm text-muted-foreground italic">
+    <span className="font-semibold not-italic">Derivation:</span>{" "}
+    {currentDef.derivation}
+  </p>
+)}
           </div>
         )}
       </DialogContent>
