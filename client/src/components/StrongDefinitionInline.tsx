@@ -1,18 +1,29 @@
 import { useMemo } from "react";
-import { getStrongsDefinition, StrongsDefinition } from "@/lib/strongsData";
+import { getStrongsDefinition } from "@/lib/strongsData";
 
-interface StrongDefinitionInlineProps {
-  strongsNumbers: string[];
-  activeIndex: number;                  // kept to match BibleReader
-  onActiveIndexChange?: (index: number) => void; // unused now but safe to keep
+export interface StrongDefinitionInlineProps {
+  // Make both props safe/optional so bad data can't crash us
+  strongsNumbers?: string[];
+  activeIndex?: number;
+  onActiveIndexChange?: (index: number) => void; // kept for future use
 }
 
 export function StrongDefinitionInline({
   strongsNumbers,
-  activeIndex,
+  activeIndex = 0,
 }: StrongDefinitionInlineProps) {
-  // Safely pick the active Strong's number
-  const strongNumber = strongsNumbers[activeIndex] ?? strongsNumbers[0];
+  // 🔒 Hard guard: if we don't have a proper array with at least one item, render nothing
+  if (!Array.isArray(strongsNumbers) || strongsNumbers.length === 0) {
+    return null;
+  }
+
+  // Clamp the index into a valid range
+  const safeIndex =
+    activeIndex >= 0 && activeIndex < strongsNumbers.length
+      ? activeIndex
+      : 0;
+
+  const strongNumber = strongsNumbers[safeIndex];
 
   const def = useMemo(() => {
     if (!strongNumber) return null;
@@ -24,37 +35,24 @@ export function StrongDefinitionInline({
     }
   }, [strongNumber]);
 
-  // If we still don't have a valid definition, render nothing
-  if (!strongNumber || !def || typeof def !== "object") {
+  // If we still don't have a valid definition, don't render anything
+  if (!def || typeof def !== "object") {
     return null;
   }
 
-  // Make this tolerant of both:
-  // - normalized StrongsDefinition
-  // - raw JSON with fields: strongs_def, kjv_def, translit, lemma, etc.
-  const d = def as StrongsDefinition & {
-    lemma?: string;
-    translit?: string;
-    strongs_def?: string;
-    kjv_def?: string;
-    derivation?: string;
-    pronunciation?: string;
-    partOfSpeech?: string;
-    pos?: string;
-  };
+  // Be tolerant of both:
+  // 1) Normalized StrongsDefinition
+  // 2) Raw JSON like:
+  //    { strongs_def, kjv_def, translit, lemma, derivation, pos, ... }
+  const d = def as any;
 
-  const number =
-    (d as any).number ?? strongNumber;
+  const number = d.number ?? strongNumber;
   const lemma = d.lemma;
-  const transliteration =
-    (d as any).transliteration ?? d.translit;
-  const pronunciation = (d as any).pronunciation;
-  const partOfSpeech =
-    (d as any).partOfSpeech ?? d.pos;
-  const gloss =
-    (d as any).definition ?? d.strongs_def;
-  const usage =
-    (d as any).usage ?? d.kjv_def;
+  const transliteration = d.transliteration ?? d.translit;
+  const pronunciation = d.pronunciation;
+  const partOfSpeech = d.partOfSpeech ?? d.pos;
+  const gloss = d.definition ?? d.strongs_def;
+  const usage = d.usage ?? d.kjv_def;
   const derivation = d.derivation;
 
   return (
