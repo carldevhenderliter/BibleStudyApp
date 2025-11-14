@@ -70,7 +70,7 @@ export function BibleReader({
   const [selectedStrong, setSelectedStrong] = useState<SelectedStrong | null>(
     null
   );
-  
+
   const { toast } = useToast();
 
   // Load verses + saved highlights/notes
@@ -234,9 +234,7 @@ export function BibleReader({
     if (!addingNote) return;
 
     const existingNote = notes.find(
-      (n) =>
-        n.verseId === addingNote.verseId &&
-        n.wordIndex === Number(wordIndex)
+      (n) => n.verseId === addingNote.verseId && n.wordIndex === Number(wordIndex)
     );
     if (existingNote) {
       handleUpdateNote(existingNote.id, content);
@@ -287,52 +285,27 @@ export function BibleReader({
   };
 
   const handleStrongClick = (verseId: string, strongNumber: string) => {
-  const verse = verses.find(
-    (v) => v.id === verseId
-  ) as BibleVerseWithTokens | undefined;
-  if (!verse) return;
+    const verse = verses.find(
+      (v) => v.id === verseId
+    ) as BibleVerseWithTokens | undefined;
+    if (!verse) return;
 
-  const strongsNumbers = new Set<string>();
-  if (verse.tokens) {
-    verse.tokens.forEach((token) => {
-      if (token.strongs) {
-        if (Array.isArray(token.strongs)) {
-          token.strongs.forEach((num) => {
-            if (num && num.trim()) {
-              strongsNumbers.add(num.trim());
-            }
-          });
-        } else if (token.strongs.trim()) {
-          strongsNumbers.add(token.strongs.trim());
+    const strongsNumbers = new Set<string>();
+    if (verse.tokens) {
+      verse.tokens.forEach((token) => {
+        if (token.strongs) {
+          if (Array.isArray(token.strongs)) {
+            token.strongs.forEach((num) => {
+              if (num && num.trim()) {
+                strongsNumbers.add(num.trim());
+              }
+            });
+          } else if (token.strongs.trim()) {
+            strongsNumbers.add(token.strongs.trim());
+          }
         }
-      }
-    });
-  }
-
-  const strongsList = Array.from(strongsNumbers);
-
-  if (strongsList.length === 0) {
-    toast({
-      title: "No Strong's numbers",
-      description: `No Strong's data found for this verse.`,
-      variant: "default",
-    });
-    return;
-  }
-
-  let clickedIndex = strongsList.indexOf(strongNumber);
-  if (clickedIndex < 0) {
-    clickedIndex = 0;
-  }
-
-  setSelectedStrong({
-    verseId,
-    strongsNumbers: strongsList,
-    activeIndex: clickedIndex,
-    verseReference: `${verse.book} ${verse.chapter}:${verse.verse}`,
-  });
-};
-
+      });
+    }
 
     const strongsList = Array.from(strongsNumbers);
 
@@ -356,7 +329,6 @@ export function BibleReader({
       activeIndex: clickedIndex,
       verseReference: `${verse.book} ${verse.chapter}:${verse.verse}`,
     });
-    setIsStrongDialogOpen(true);
   };
 
   return (
@@ -382,20 +354,16 @@ export function BibleReader({
             <div className="font-serif text-base leading-relaxed">
               {verses.map((verse) => {
                 const verseNotes = notes.filter(
-                  (n) =>
-                    n.verseId === verse.id && n.wordIndex === undefined
+                  (n) => n.verseId === verse.id && n.wordIndex === undefined
                 );
                 const wordNotes = notes.filter(
-                  (n) =>
-                    n.verseId === verse.id && n.wordIndex !== undefined
+                  (n) => n.verseId === verse.id && n.wordIndex !== undefined
                 );
                 const verseHighlight = highlights.find(
-                  (h) =>
-                    h.verseId === verse.id && h.wordIndex === undefined
+                  (h) => h.verseId === verse.id && h.wordIndex === undefined
                 );
                 const wordHighlights = highlights.filter(
-                  (h) =>
-                    h.verseId === verse.id && h.wordIndex !== undefined
+                  (h) => h.verseId === verse.id && h.wordIndex !== undefined
                 );
                 const verseWithTokens = verse as BibleVerseWithTokens;
                 const hasTokens =
@@ -472,18 +440,21 @@ export function BibleReader({
                             />
                           </div>
                         ))}
-                        {selectedStrong && selectedStrong.verseId === verse.id && (
-        <StrongDefinitionInline
-          strongsNumbers={selectedStrong.strongsNumbers}
-          activeIndex={selectedStrong.activeIndex}
-          onActiveIndexChange={(index) =>
-            setSelectedStrong({
-              ...selectedStrong,
-              activeIndex: index,
-            })
-          }
-        />
-      )}
+
+                        {/* Inline Strong's definition under this verse */}
+                        {selectedStrong &&
+                          selectedStrong.verseId === verse.id && (
+                            <StrongDefinitionInline
+                              strongsNumbers={selectedStrong.strongsNumbers}
+                              activeIndex={selectedStrong.activeIndex}
+                              onActiveIndexChange={(index) =>
+                                setSelectedStrong({
+                                  ...selectedStrong,
+                                  activeIndex: index,
+                                })
+                              }
+                            />
+                          )}
 
                         {!showWordByWord &&
                           wordNotes.map((note) => (
@@ -586,20 +557,16 @@ export function BibleReader({
             <>
               {verses.map((verse) => {
                 const verseNotes = notes.filter(
-                  (n) =>
-                    n.verseId === verse.id && n.wordIndex === undefined
+                  (n) => n.verseId === verse.id && n.wordIndex === undefined
                 );
                 const wordNotes = notes.filter(
-                  (n) =>
-                    n.verseId === verse.id && n.wordIndex !== undefined
+                  (n) => n.verseId === verse.id && n.wordIndex !== undefined
                 );
                 const verseHighlight = highlights.find(
-                  (h) =>
-                    h.verseId === verse.id && h.wordIndex === undefined
+                  (h) => h.verseId === verse.id && h.wordIndex === undefined
                 );
                 const wordHighlights = highlights.filter(
-                  (h) =>
-                    h.verseId === verse.id && h.wordIndex !== undefined
+                  (h) => h.verseId === verse.id && h.wordIndex !== undefined
                 );
                 const verseWithTokens = verse as BibleVerseWithTokens;
                 const hasTokens =
@@ -676,6 +643,21 @@ export function BibleReader({
                           />
                         ))}
 
+                        {/* Inline Strong's definition here too */}
+                        {selectedStrong &&
+                          selectedStrong.verseId === verse.id && (
+                            <StrongDefinitionInline
+                              strongsNumbers={selectedStrong.strongsNumbers}
+                              activeIndex={selectedStrong.activeIndex}
+                              onActiveIndexChange={(index) =>
+                                setSelectedStrong({
+                                  ...selectedStrong,
+                                  activeIndex: index,
+                                })
+                              }
+                            />
+                          )}
+
                         {!showWordByWord &&
                           wordNotes.map((note) => (
                             <NoteEditor
@@ -697,8 +679,7 @@ export function BibleReader({
                         {addingNote?.verseId === verse.id && (
                           <NoteEditor
                             note={
-                              addingNote.wordIndex !==
-                              undefined
+                              addingNote.wordIndex !== undefined
                                 ? wordNotes.find(
                                     (n) =>
                                       n.wordIndex ===
@@ -710,16 +691,12 @@ export function BibleReader({
                             verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
                             wordText={addingNote.wordText}
                             onSave={(content) => {
-                              if (
-                                addingNote.wordIndex !==
-                                undefined
-                              ) {
-                                const existingNote =
-                                  wordNotes.find(
-                                    (n) =>
-                                      n.wordIndex ===
-                                      addingNote.wordIndex
-                                  );
+                              if (addingNote.wordIndex !== undefined) {
+                                const existingNote = wordNotes.find(
+                                  (n) =>
+                                    n.wordIndex ===
+                                    addingNote.wordIndex
+                                );
                                 if (existingNote) {
                                   handleUpdateNote(
                                     existingNote.id,
@@ -734,16 +711,12 @@ export function BibleReader({
                               setAddingNote(null);
                             }}
                             onDelete={() => {
-                              if (
-                                addingNote.wordIndex !==
-                                undefined
-                              ) {
-                                const existingNote =
-                                  wordNotes.find(
-                                    (n) =>
-                                      n.wordIndex ===
-                                      addingNote.wordIndex
-                                  );
+                              if (addingNote.wordIndex !== undefined) {
+                                const existingNote = wordNotes.find(
+                                  (n) =>
+                                    n.wordIndex ===
+                                    addingNote.wordIndex
+                                );
                                 if (existingNote) {
                                   handleDeleteNote(
                                     existingNote.id
@@ -781,10 +754,6 @@ export function BibleReader({
           position={highlightToolbar.position}
           onHighlight={handleHighlight}
           onClose={() => setHighlightToolbar(null)}
-        />
-      )}
-
-      
         />
       )}
     </div>
