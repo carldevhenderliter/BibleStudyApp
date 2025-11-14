@@ -5,6 +5,8 @@ export type StrongsDefinition = {
   partOfSpeech: string;
   definition: string;
   usage: string;
+  lemma?: string;
+  derivation?: string;
 };
 
 // Shape of the raw entries in your JSON files
