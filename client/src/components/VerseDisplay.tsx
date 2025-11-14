@@ -32,6 +32,8 @@ interface VerseDisplayProps {
   onStrongClick: (strongNumber: string) => void;
   wordNotes: Note[];
   activeWordNote: { verseId: string; wordIndex: number; wordText?: string } | null;
+  /** The currently selected Strong's number for chapter-wide highlighting */
+  activeStrongNumber?: string;
 }
 
 const highlightColorMap = {
@@ -64,6 +66,7 @@ export function VerseDisplay({
   onStrongClick,
   wordNotes,
   activeWordNote,
+  activeStrongNumber,
 }: VerseDisplayProps) {
   const [showAddButton, setShowAddButton] = useState(false);
   const [noteContent, setNoteContent] = useState('');
@@ -92,6 +95,20 @@ export function VerseDisplay({
     return wordHighlights.find(h => h.wordIndex === wordIndex);
   };
 
+  const isTokenMatchingActiveStrong = (token: any): boolean => {
+    if (!activeStrongNumber) return false;
+    if (!token.strongs) return false;
+
+    if (Array.isArray(token.strongs)) {
+      return token.strongs.includes(activeStrongNumber);
+    }
+    return token.strongs === activeStrongNumber;
+  };
+
+  const strongHighlightClass =
+    'bg-primary/25 dark:bg-primary/30 ring-1 ring-primary/40 rounded-sm';
+
+  // --- BOOK MODE, NO WORD-BY-WORD ---
   if (displayMode === 'book' && !showWordByWord) {
     return (
       <span
@@ -104,30 +121,51 @@ export function VerseDisplay({
     );
   }
 
+  // --- BOOK MODE, WORD-BY-WORD ---
   if (displayMode === 'book' && showWordByWord) {
     return (
-      <div className="inline-flex flex-wrap gap-x-3 gap-y-6 mr-2" data-testid={`verse-${verse.id}`} onMouseUp={handleMouseUp}>
+      <div
+        className="inline-flex flex-wrap gap-x-3 gap-y-6 mr-2"
+        data-testid={`verse-${verse.id}`}
+        onMouseUp={handleMouseUp}
+      >
         {verseWithTokens.tokens!.map((token, idx) => {
-          const hasData = (showStrongsNumbers && token.strongs) || (showInterlinear && token.original);
+          const hasData =
+            (showStrongsNumbers && token.strongs) ||
+            (showInterlinear && token.original);
           const wordNote = showNotes ? getWordNote(idx) : undefined;
           const wordHighlight = getWordHighlight(idx);
-          const wordHighlightClass = wordHighlight ? highlightColorMap[wordHighlight.color] : '';
+          const wordHighlightClass = wordHighlight
+            ? highlightColorMap[wordHighlight.color]
+            : '';
+          const isActiveStrong = isTokenMatchingActiveStrong(token);
 
           return (
             <div key={idx} className="inline-flex flex-col items-center gap-1">
               <Popover>
                 <PopoverTrigger asChild>
-                  <div 
+                  <div
                     className={`inline-flex flex-col items-center gap-0.5 group cursor-pointer relative`}
                     data-testid={`word-${verse.id}-${idx}`}
                   >
-                    <span className={`font-serif text-base ${wordHighlightClass} ${hasData ? 'px-1' : ''} group-hover:bg-accent/50 rounded transition-colors`}>
+                    <span
+                      className={[
+                        'font-serif text-base rounded transition-colors',
+                        hasData ? 'px-1' : '',
+                        wordHighlightClass,
+                        isActiveStrong ? strongHighlightClass : '',
+                        'group-hover:bg-accent/50',
+                      ].join(' ')}
+                    >
                       {token.english}
                     </span>
-                    
+
                     {showStrongsNumbers && token.strongs && (
                       <div className="flex gap-1 flex-wrap justify-center">
-                        {(Array.isArray(token.strongs) ? token.strongs : [token.strongs]).map((strongNum, sIdx) => (
+                        {(Array.isArray(token.strongs)
+                          ? token.strongs
+                          : [token.strongs]
+                        ).map((strongNum, sIdx) => (
                           <Tooltip key={sIdx}>
                             <TooltipTrigger asChild>
                               <button
@@ -143,13 +181,15 @@ export function VerseDisplay({
                               </button>
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p className="text-xs">Strong's {strongNum} - Click to view definition</p>
+                              <p className="text-xs">
+                                Strong&apos;s {strongNum} - Click to view definition
+                              </p>
                             </TooltipContent>
                           </Tooltip>
                         ))}
                       </div>
                     )}
-                    
+
                     {showInterlinear && token.original && (
                       <span className="text-sm italic text-muted-foreground font-serif">
                         {token.original}
@@ -157,7 +197,10 @@ export function VerseDisplay({
                     )}
                   </div>
                 </PopoverTrigger>
-                <PopoverContent className="w-56 p-2 space-y-2" onOpenAutoFocus={(e) => e.preventDefault()}>
+                <PopoverContent
+                  className="w-56 p-2 space-y-2"
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                >
                   {showNotes && (
                     <Button
                       size="sm"
@@ -171,9 +214,23 @@ export function VerseDisplay({
                     </Button>
                   )}
                   <div className="space-y-1">
-                    <div className="text-xs text-muted-foreground px-2">Highlight Color:</div>
+                    <div className="text-xs text-muted-foreground px-2">
+                      Highlight Color:
+                    </div>
                     <div className="flex gap-1 flex-wrap px-2">
-                      {(['yellow', 'blue', 'green', 'pink', 'purple', 'orange', 'red', 'cyan', 'gray'] as const).map((color) => (
+                      {(
+                        [
+                          'yellow',
+                          'blue',
+                          'green',
+                          'pink',
+                          'purple',
+                          'orange',
+                          'red',
+                          'cyan',
+                          'gray',
+                        ] as const
+                      ).map((color) => (
                         <button
                           key={color}
                           onClick={(e) => {
@@ -181,7 +238,13 @@ export function VerseDisplay({
                             onHighlightWord(idx, token.english, color);
                           }}
                           onMouseDown={(e) => e.preventDefault()}
-                          className={`w-6 h-6 rounded ${highlightColorMap[color]} border-2 ${wordHighlight?.color === color ? 'border-foreground' : 'border-transparent'} hover:scale-110 transition-transform`}
+                          className={`w-6 h-6 rounded ${
+                            highlightColorMap[color]
+                          } border-2 ${
+                            wordHighlight?.color === color
+                              ? 'border-foreground'
+                              : 'border-transparent'
+                          } hover:scale-110 transition-transform`}
                           data-testid={`button-highlight-${color}-${verse.id}-${idx}`}
                           aria-label={`Highlight ${color}`}
                         />
@@ -190,12 +253,17 @@ export function VerseDisplay({
                   </div>
                 </PopoverContent>
               </Popover>
-              
+
               {showNotes && wordNote && (
-                <div className="text-xs text-muted-foreground bg-muted/50 border rounded px-2 py-1 max-w-[200px]" data-testid={`word-note-${verse.id}-${idx}`}>
+                <div
+                  className="text-xs text-muted-foreground bg-muted/50 border rounded px-2 py-1 max-w-[200px]"
+                  data-testid={`word-note-${verse.id}-${idx}`}
+                >
                   <div className="flex items-start gap-1">
                     <StickyNote className="h-3 w-3 text-primary flex-shrink-0 mt-0.5" />
-                    <span className="text-left break-words">{wordNote.content}</span>
+                    <span className="text-left break-words">
+                      {wordNote.content}
+                    </span>
                   </div>
                 </div>
               )}
@@ -206,6 +274,7 @@ export function VerseDisplay({
     );
   }
 
+  // --- VERSE MODE ---
   return (
     <div
       className="group relative py-3"
@@ -216,31 +285,53 @@ export function VerseDisplay({
         <div className="text-sm text-muted-foreground font-mono w-8 flex-shrink-0 text-right pt-1">
           {verse.verse}
         </div>
-        
+
         <div className="flex-1" onMouseUp={handleMouseUp}>
           {showWordByWord ? (
-            <div className="flex flex-wrap gap-x-3 gap-y-6" data-testid={`verse-${verse.id}`}>
+            <div
+              className="flex flex-wrap gap-x-3 gap-y-6"
+              data-testid={`verse-${verse.id}`}
+            >
               {verseWithTokens.tokens!.map((token, idx) => {
-                const hasData = (showStrongsNumbers && token.strongs) || (showInterlinear && token.original);
+                const hasData =
+                  (showStrongsNumbers && token.strongs) ||
+                  (showInterlinear && token.original);
                 const wordNote = showNotes ? getWordNote(idx) : undefined;
                 const wordHighlight = getWordHighlight(idx);
-                const wordHighlightClass = wordHighlight ? highlightColorMap[wordHighlight.color] : '';
+                const wordHighlightClass = wordHighlight
+                  ? highlightColorMap[wordHighlight.color]
+                  : '';
+                const isActiveStrong = isTokenMatchingActiveStrong(token);
 
                 return (
-                  <div key={idx} className="inline-flex flex-col items-center gap-1">
+                  <div
+                    key={idx}
+                    className="inline-flex flex-col items-center gap-1"
+                  >
                     <Popover>
                       <PopoverTrigger asChild>
-                        <div 
+                        <div
                           className={`inline-flex flex-col items-center gap-0.5 group/word cursor-pointer relative`}
                           data-testid={`word-${verse.id}-${idx}`}
                         >
-                          <span className={`font-serif text-base ${wordHighlightClass} ${hasData ? 'px-1' : ''} group-hover/word:bg-accent/50 rounded transition-colors`}>
+                          <span
+                            className={[
+                              'font-serif text-base rounded transition-colors',
+                              hasData ? 'px-1' : '',
+                              wordHighlightClass,
+                              isActiveStrong ? strongHighlightClass : '',
+                              'group-hover/word:bg-accent/50',
+                            ].join(' ')}
+                          >
                             {token.english}
                           </span>
-                          
+
                           {showStrongsNumbers && token.strongs && (
                             <div className="flex gap-1 flex-wrap justify-center">
-                              {(Array.isArray(token.strongs) ? token.strongs : [token.strongs]).map((strongNum, sIdx) => (
+                              {(Array.isArray(token.strongs)
+                                ? token.strongs
+                                : [token.strongs]
+                              ).map((strongNum, sIdx) => (
                                 <Tooltip key={sIdx}>
                                   <TooltipTrigger asChild>
                                     <button
@@ -256,13 +347,16 @@ export function VerseDisplay({
                                     </button>
                                   </TooltipTrigger>
                                   <TooltipContent>
-                                    <p className="text-xs">Strong's {strongNum} - Click to view definition</p>
+                                    <p className="text-xs">
+                                      Strong&apos;s {strongNum} - Click to view
+                                      definition
+                                    </p>
                                   </TooltipContent>
                                 </Tooltip>
                               ))}
                             </div>
                           )}
-                          
+
                           {showInterlinear && token.original && (
                             <span className="text-sm italic text-muted-foreground font-serif">
                               {token.original}
@@ -270,13 +364,18 @@ export function VerseDisplay({
                           )}
                         </div>
                       </PopoverTrigger>
-                      <PopoverContent className="w-56 p-2 space-y-2" onOpenAutoFocus={(e) => e.preventDefault()}>
+                      <PopoverContent
+                        className="w-56 p-2 space-y-2"
+                        onOpenAutoFocus={(e) => e.preventDefault()}
+                      >
                         {showNotes && (
                           <Button
                             size="sm"
                             variant="ghost"
                             className="w-full justify-start"
-                            onClick={() => onAddWordNote(idx, token.english)}
+                            onClick={() =>
+                              onAddWordNote(idx, token.english)
+                            }
                             data-testid={`button-add-word-note-${verse.id}-${idx}`}
                           >
                             <StickyNote className="h-3 w-3 mr-2" />
@@ -284,9 +383,23 @@ export function VerseDisplay({
                           </Button>
                         )}
                         <div className="space-y-1">
-                          <div className="text-xs text-muted-foreground px-2">Highlight Color:</div>
+                          <div className="text-xs text-muted-foreground px-2">
+                            Highlight Color:
+                          </div>
                           <div className="flex gap-1 flex-wrap px-2">
-                            {(['yellow', 'blue', 'green', 'pink', 'purple', 'orange', 'red', 'cyan', 'gray'] as const).map((color) => (
+                            {(
+                              [
+                                'yellow',
+                                'blue',
+                                'green',
+                                'pink',
+                                'purple',
+                                'orange',
+                                'red',
+                                'cyan',
+                                'gray',
+                              ] as const
+                            ).map((color) => (
                               <button
                                 key={color}
                                 onClick={(e) => {
@@ -294,7 +407,13 @@ export function VerseDisplay({
                                   onHighlightWord(idx, token.english, color);
                                 }}
                                 onMouseDown={(e) => e.preventDefault()}
-                                className={`w-6 h-6 rounded ${highlightColorMap[color]} border-2 ${wordHighlight?.color === color ? 'border-foreground' : 'border-transparent'} hover:scale-110 transition-transform`}
+                                className={`w-6 h-6 rounded ${
+                                  highlightColorMap[color]
+                                } border-2 ${
+                                  wordHighlight?.color === color
+                                    ? 'border-foreground'
+                                    : 'border-transparent'
+                                } hover:scale-110 transition-transform`}
                                 data-testid={`button-highlight-${color}-${verse.id}-${idx}`}
                                 aria-label={`Highlight ${color}`}
                               />
@@ -303,12 +422,17 @@ export function VerseDisplay({
                         </div>
                       </PopoverContent>
                     </Popover>
-                    
+
                     {showNotes && wordNote && (
-                      <div className="text-xs text-muted-foreground bg-muted/50 border rounded px-2 py-1 max-w-[200px]" data-testid={`word-note-${verse.id}-${idx}`}>
+                      <div
+                        className="text-xs text-muted-foreground bg-muted/50 border rounded px-2 py-1 max-w-[200px]"
+                        data-testid={`word-note-${verse.id}-${idx}`}
+                      >
                         <div className="flex items-start gap-1">
                           <StickyNote className="h-3 w-3 text-primary flex-shrink-0 mt-0.5" />
-                          <span className="text-left break-words">{wordNote.content}</span>
+                          <span className="text-left break-words">
+                            {wordNote.content}
+                          </span>
                         </div>
                       </div>
                     )}
