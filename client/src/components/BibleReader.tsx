@@ -42,10 +42,8 @@ type AddingNote = {
 };
 
 type SelectedStrong = {
-  verseId: string;
-  strongsNumbers: string[];
-  activeIndex: number;
-  verseReference: string;
+  strongNumber: string;          // single Strong’s number
+  verseReference: string;        // e.g. "John 1:1"
 };
 
 export function BibleReader({
@@ -55,7 +53,7 @@ export function BibleReader({
   showInterlinear,
   showNotes,
   fontSize,
-  displayMode, // currently not changing layout, but kept for future
+  displayMode,
   selectedTranslation,
 }: BibleReaderProps) {
   const [verses, setVerses] = useState<BibleVerseWithTokens[]>([]);
@@ -71,10 +69,9 @@ export function BibleReader({
   const [selectedStrong, setSelectedStrong] = useState<SelectedStrong | null>(
     null
   );
+  const [searchQuery, setSearchQuery] = useState("");
 
-  const [searchQuery, setSearchQuery] = useState(""); // future: "Matt 5:4", word search, Strong’s search
   const hasSelectedStrong = !!selectedStrong;
-
   const { toast } = useToast();
 
   // Load verses + saved highlights/notes
@@ -146,7 +143,7 @@ export function BibleReader({
       const rect = range.getBoundingClientRect();
       setHighlightToolbar({
         show: true,
-        position: { x: rect.left, y: rect.top },
+        position: { x: number; y: number } = { x: rect.left, y: rect.top },
         verseId,
         text,
       });
@@ -293,15 +290,10 @@ export function BibleReader({
   const handleStrongClick = (verseId: string, strongNumber: string) => {
     const normalizedStrong = strongNumber.trim();
 
-    // 🔁 Toggle off if the same Strong’s (same verse + same active number) is clicked again
-    if (selectedStrong) {
-      const sameVerse = selectedStrong.verseId === verseId;
-      const currentNumber =
-        selectedStrong.strongsNumbers[selectedStrong.activeIndex];
-      if (sameVerse && currentNumber === normalizedStrong) {
-        setSelectedStrong(null);
-        return;
-      }
+    // 🔁 If same Strong’s on same verse is clicked again → toggle off
+    if (selectedStrong && selectedStrong.strongNumber === normalizedStrong) {
+      setSelectedStrong(null);
+      return;
     }
 
     const verse = verses.find(
@@ -309,45 +301,14 @@ export function BibleReader({
     ) as BibleVerseWithTokens | undefined;
     if (!verse) return;
 
-    const strongsNumbers = new Set<string>();
-    if (verse.tokens) {
-      verse.tokens.forEach((token) => {
-        if (token.strongs) {
-          if (Array.isArray(token.strongs)) {
-            token.strongs.forEach((num) => {
-              const trimmed = num && num.trim();
-              if (trimmed) strongsNumbers.add(trimmed);
-            });
-          } else {
-            const trimmed = token.strongs.trim();
-            if (trimmed) strongsNumbers.add(trimmed);
-          }
-        }
-      });
-    }
-
-    const strongsList = Array.from(strongsNumbers);
-    if (strongsList.length === 0) {
-      toast({
-        title: "No Strong's numbers",
-        description: `No Strong's data found for this verse.`,
-        variant: "default",
-      });
-      return;
-    }
-
-    let clickedIndex = strongsList.indexOf(normalizedStrong);
-    if (clickedIndex < 0) {
-      clickedIndex = 0;
-    }
-
+    // We don't gather all strongs anymore — just use the one clicked
     setSelectedStrong({
-      verseId,
-      strongsNumbers: strongsList,
-      activeIndex: clickedIndex,
+      strongNumber: normalizedStrong,
       verseReference: `${verse.book} ${verse.chapter}:${verse.verse}`,
     });
   };
+
+  const activeStrongNumber = selectedStrong?.strongNumber ?? null;
 
   return (
     <div className="h-full flex flex-col">
@@ -359,7 +320,6 @@ export function BibleReader({
       >
         {/* Title + Search row */}
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-          {/* Title */}
           <div>
             <h1 className="text-2xl md:text-3xl font-serif font-semibold">
               {book} {chapter}
@@ -388,21 +348,12 @@ export function BibleReader({
         {hasSelectedStrong && selectedStrong && (
           <div className="pt-2 space-y-2">
             <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-muted-foreground">
-              <span>Strong&apos;s for {selectedStrong.verseReference}</span>
+              <span>Strong&apos;s {selectedStrong.strongNumber} · {selectedStrong.verseReference}</span>
             </div>
 
-            <StrongDefinitionInline
-              strongsNumbers={selectedStrong.strongsNumbers}
-              activeIndex={selectedStrong.activeIndex}
-              onActiveIndexChange={(index) =>
-                setSelectedStrong({
-                  ...selectedStrong,
-                  activeIndex: index,
-                })
-              }
-            />
+            <StrongDefinitionInline strongNumber={selectedStrong.strongNumber} />
 
-            {/* ⬇️ Arrow to close Strong’s panel */}
+            {/* ⬇️ Arrow button to close Strong’s panel */}
             <div className="flex justify-center pt-1">
               <button
                 type="button"
@@ -482,6 +433,7 @@ export function BibleReader({
                         }
                       : null
                   }
+                  activeStrongNumber={activeStrongNumber || undefined} // 🔥 highlight all matching Strong’s in this chapter
                 />
 
                 {/* Verse-level notes */}
