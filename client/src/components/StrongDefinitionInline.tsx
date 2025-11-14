@@ -2,27 +2,13 @@
 import { useMemo } from "react";
 import { getStrongsDefinition, StrongsDefinition } from "@/lib/strongsData";
 
-export interface StrongDefinitionInlineProps {
-  strongsNumbers: string[];              // e.g. ["G3056"]
-  activeIndex: number;                   // index into strongsNumbers
+interface StrongDefinitionInlineProps {
+  strongNumber: string; // e.g. "G3056"
 }
 
 export function StrongDefinitionInline({
-  strongsNumbers,
-  activeIndex,
+  strongNumber,
 }: StrongDefinitionInlineProps) {
-  // Hard guard: if bad data comes in, don't render anything
-  if (!Array.isArray(strongsNumbers) || strongsNumbers.length === 0) {
-    return null;
-  }
-
-  const safeIndex =
-    activeIndex >= 0 && activeIndex < strongsNumbers.length
-      ? activeIndex
-      : 0;
-
-  const strongNumber = strongsNumbers[safeIndex];
-
   const def = useMemo<StrongsDefinition | null>(() => {
     if (!strongNumber) return null;
     try {
@@ -33,10 +19,7 @@ export function StrongDefinitionInline({
     }
   }, [strongNumber]);
 
-  if (!def) {
-    // If the Strong's number isn't in the JSON yet, just don't show anything.
-    return null;
-  }
+  if (!def) return null;
 
   const {
     number,
@@ -50,7 +33,7 @@ export function StrongDefinitionInline({
   } = def;
 
   return (
-    <div className="mt-3 rounded-lg border bg-muted/40 px-4 py-3 text-sm shadow-sm">
+    <div className="mt-1 rounded-lg border bg-muted/40 px-4 py-3 text-sm shadow-sm">
       <div className="flex flex-wrap items-baseline gap-2">
         {/* Strong's number */}
         <span className="font-mono text-xs font-semibold text-primary">
