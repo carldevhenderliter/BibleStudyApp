@@ -54,24 +54,51 @@ async function loadHebrewRaw() {
 }
 
 // Map the raw JSON entry into your StrongsDefinition shape
+// Map the raw JSON entry into your StrongsDefinition shape
 function mapRawToDefinition(
   strongs: string,
   raw: RawStrongsEntry | undefined
 ): StrongsDefinition | null {
   if (!raw) return null;
 
+  // Try multiple possible key names for each field, with sensible fallbacks.
+  const transliteration =
+    (raw.translit as string | undefined) ??
+    (raw.transliteration as string | undefined) ??
+    (raw.lemma as string | undefined) ??
+    "";
+
+  const pronunciation =
+    (raw.pronunciation as string | undefined) ??
+    (raw.pronounce as string | undefined) ??
+    "";
+
+  const partOfSpeech =
+    (raw.pos as string | undefined) ??
+    (raw.part as string | undefined) ??
+    (raw.partOfSpeech as string | undefined) ??
+    "";
+
+  const definition =
+    (raw.strongs_def as string | undefined) ??
+    (raw.definition as string | undefined) ??
+    "";
+
+  const usage =
+    (raw.kjv_def as string | undefined) ??
+    (raw.usage as string | undefined) ??
+    "";
+
   return {
     number: strongs,
-    transliteration: raw.translit ?? "",
-    pronunciation:
-      // use explicit pronunciation if present, otherwise leave blank
-      (raw.pronunciation as string | undefined) ?? "",
-    partOfSpeech:
-      (raw.pos as string | undefined) ?? "",
-    definition: raw.strongs_def ?? "",
-    usage: raw.kjv_def ?? "",
+    transliteration,
+    pronunciation,
+    partOfSpeech,
+    definition,
+    usage,
   };
 }
+
 
 export async function loadStrongsDefinition(
   strongs: string
