@@ -333,39 +333,57 @@ export function BibleReader({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header / Title / Strong's Panel */}
-      <div className="border-b px-6 py-4 space-y-4">
+    {/* Header / Title / Search / Strong's Panel */}
+    <div
+      className={`border-b px-6 ${
+        hasSelectedStrong ? "py-4 space-y-3" : "py-3 space-y-2"
+      }`}
+    >
+      {/* Title + Search row */}
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         {/* Title */}
         <div>
-          <h1 className="text-3xl font-serif font-semibold">
+          <h1 className="text-2xl md:text-3xl font-serif font-semibold">
             {book} {chapter}
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-xs md:text-sm text-muted-foreground mt-1">
             {selectedTranslation}
           </p>
         </div>
 
-        {/* 🔍 Reserved space for search bar in the future */}
-        <div className="h-10 flex items-center">
-          {/* <SearchBar /> */}
-        </div>
-
-        {/* 📘 Strong’s Inline Definition (header section) */}
-        {selectedStrong && (
-          <div className="mt-2">
-            <StrongDefinitionInline
-              strongsNumbers={selectedStrong.strongsNumbers}
-              activeIndex={selectedStrong.activeIndex}
-              onActiveIndexChange={(index) =>
-                setSelectedStrong({
-                  ...selectedStrong,
-                  activeIndex: index,
-                })
-              }
+        {/* Sleek search bar */}
+        <div className="w-full max-w-xs md:max-w-sm">
+          <div className="relative">
+            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground/70">
+              <Search className="h-4 w-4" />
+            </span>
+            <input
+              type="text"
+              className="w-full rounded-full border border-border bg-background/80 px-9 py-1.5 text-sm shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+              placeholder="Search (coming soon)…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-        )}
+        </div>
       </div>
+
+      {/* 📘 Strong’s Inline Definition (only when one is selected) */}
+      {hasSelectedStrong && selectedStrong && (
+        <div className="pt-2">
+          <StrongDefinitionInline
+            strongsNumbers={selectedStrong.strongsNumbers}
+            activeIndex={selectedStrong.activeIndex}
+            onActiveIndexChange={(index) =>
+              setSelectedStrong({
+                ...selectedStrong,
+                activeIndex: index,
+              })
+            }
+          />
+        </div>
+      )}
+    </div>
 
       <ScrollArea className="flex-1">
         <div
