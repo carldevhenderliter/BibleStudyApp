@@ -332,18 +332,40 @@ export function BibleReader({
   };
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="border-b px-6 py-4">
-        <h1
-          className="text-3xl font-serif font-semibold"
-          data-testid="text-chapter-title"
-        >
-          {book} {chapter}
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {selectedTranslation}
-        </p>
-      </div>
+    <div className="border-b px-6 py-4 space-y-4">
+  {/* Title */}
+  <div>
+    <h1 className="text-3xl font-serif font-semibold">
+      {book} {chapter}
+    </h1>
+    <p className="text-sm text-muted-foreground mt-1">
+      {selectedTranslation}
+    </p>
+  </div>
+
+  {/* 🔍 Reserved space for search bar in the future */}
+  <div className="h-10 flex items-center">
+    {/* You can replace this div later with a real search bar */}
+    {/* <SearchBar /> */}
+  </div>
+
+  {/* 📘 Strong’s Inline Definition (header section) */}
+  {selectedStrong && (
+    <div className="mt-2">
+      <StrongDefinitionInline
+        strongsNumbers={selectedStrong.strongsNumbers}
+        activeIndex={selectedStrong.activeIndex}
+        onActiveIndexChange={(index) =>
+          setSelectedStrong({
+            ...selectedStrong,
+            activeIndex: index,
+          })
+        }
+      />
+    </div>
+  )}
+</div>
+
 
       <ScrollArea className="flex-1">
         <div
