@@ -1,91 +1,67 @@
-// Strong's Concordance - Sample definitions
-// This is a simplified version with common Greek words from the New Testament
+// src/lib/strongsData.ts
 
 export type StrongsDefinition = {
-  number: string;
-  transliteration: string;
-  pronunciation: string;
-  partOfSpeech: string;
-  definition: string;
-  usage: string;
+  number: string;          // e.g. "G1615"
+  lemma?: string;          // Greek/Hebrew script: "ἐκτελέω"
+  transliteration?: string; // "ekteléō"
+  pronunciation?: string;
+  partOfSpeech?: string;   // from "pos" if present
+  definition?: string;     // from "strongs_def"
+  usage?: string;          // from "kjv_def"
+  derivation?: string;     // from "derivation"
 };
 
-export const strongsGreek: Record<string, StrongsDefinition> = {
-  "G746": {
-    number: "G746",
-    transliteration: "archē",
-    pronunciation: "ar-khay'",
-    partOfSpeech: "noun",
-    definition: "beginning, origin",
-    usage: "From 'archo' (to be first); a commencement, or (concretely) chief (in various applications of order, time, place, or rank)"
-  },
-  "G1722": {
-    number: "G1722",
-    transliteration: "en",
-    pronunciation: "en",
-    partOfSpeech: "preposition",
-    definition: "in, on, among",
-    usage: "A primary preposition denoting (fixed) position (in place, time or state)"
-  },
-  "G2258": {
-    number: "G2258",
-    transliteration: "ēn",
-    pronunciation: "ane",
-    partOfSpeech: "verb",
-    definition: "was, were",
-    usage: "Imperfect of 'eimi' (I am); was or were"
-  },
-  "G2316": {
-    number: "G2316",
-    transliteration: "theos",
-    pronunciation: "theh'-os",
-    partOfSpeech: "noun",
-    definition: "God, god",
-    usage: "Of uncertain affinity; a deity, especially the supreme Divinity"
-  },
-  "G2532": {
-    number: "G2532",
-    transliteration: "kai",
-    pronunciation: "kahee",
-    partOfSpeech: "conjunction",
-    definition: "and, also, even",
-    usage: "Apparently a primary particle, having a copulative and sometimes also a cumulative force"
-  },
-  "G3056": {
-    number: "G3056",
-    transliteration: "logos",
-    pronunciation: "log'-os",
-    partOfSpeech: "noun",
-    definition: "word, reason, speech",
-    usage: "From 'lego' (to speak); something said (including the thought); by implication a topic, also reasoning (the mental faculty) or motive"
-  },
-  "G3778": {
-    number: "G3778",
-    transliteration: "houtos",
-    pronunciation: "hoo'-tos",
-    partOfSpeech: "pronoun",
-    definition: "this, he",
-    usage: "Including the nominative masculine plural; the he (she or it), i.e. this or that (often with article repeated)"
-  },
-  "G4314": {
-    number: "G4314",
-    transliteration: "pros",
-    pronunciation: "pros",
-    partOfSpeech: "preposition",
-    definition: "to, toward, with",
-    usage: "A strengthened form of 'pro' (before); a preposition of direction; forward to, i.e. toward"
-  }
+// This type matches your raw JSON entries:
+// "G1615": { "strongs_def": "...", "derivation": "...", "translit": "...", "lemma": "...", "kjv_def": "finish" }
+type RawStrongsEntry = {
+  strongs_def?: string;
+  derivation?: string;
+  translit?: string;
+  lemma?: string;
+  kjv_def?: string;
+  pos?: string;
+  pronunciation?: string;
 };
 
-export const strongsHebrew: Record<string, StrongsDefinition> = {
-  // Add Hebrew definitions here as needed
-};
+// ⚠️ Adjust these paths if needed to match your repo
+import greekRaw from "../Strongs_Defintions/strongs-greek.json";
+import hebrewRaw from "../Strongs_Defintions/strongs-hebrew.json";
+
+const strongsGreek = greekRaw as Record<string, RawStrongsEntry>;
+const strongsHebrew = hebrewRaw as Record<string, RawStrongsEntry>;
+
+function normalizeStrongs(
+  number: string,
+  raw?: RawStrongsEntry
+): StrongsDefinition | null {
+  if (!raw) return null;
+
+  return {
+    number,
+    lemma: raw.lemma,
+    transliteration: raw.translit,
+    pronunciation: raw.pronunciation,
+    partOfSpeech: raw.pos,
+    definition: raw.strongs_def,
+    usage: raw.kjv_def,
+    derivation: raw.derivation,
+  };
+}
 
 export function getStrongsDefinition(number: string): StrongsDefinition | null {
-  if (number.startsWith('G')) {
-    return strongsGreek[number] || null;
-  } else if (number.startsWith('H')) {
-    return strongsHebrew[number] || null;
+  if (!number) return null;
+
+  const key = number.toUpperCase().trim(); // e.g. "G1615", "H7225"
+
+  if (key.startsWith("G")) {
+    const raw = strongsGreek[key];
+    return normalizeStrongs(key, raw);
   }
+
+  if (key.startsWith("H")) {
+    const raw = strongsHebrew[key];
+    return normalizeStrongs(key, raw);
+  }
+
   return null;
 }
