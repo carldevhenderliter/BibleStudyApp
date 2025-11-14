@@ -142,11 +142,11 @@ export function BibleReader({
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
       setHighlightToolbar({
-        show: true,
-        position: { x: number; y: number } = { x: rect.left, y: rect.top },
-        verseId,
-        text,
-      });
+  show: true,
+  position: { x: rect.left, y: rect.top },
+  verseId,
+  text,
+});
     }
   };
 
