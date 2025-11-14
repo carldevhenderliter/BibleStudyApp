@@ -332,40 +332,40 @@ export function BibleReader({
   };
 
   return (
-    <div className="border-b px-6 py-4 space-y-4">
-  {/* Title */}
-  <div>
-    <h1 className="text-3xl font-serif font-semibold">
-      {book} {chapter}
-    </h1>
-    <p className="text-sm text-muted-foreground mt-1">
-      {selectedTranslation}
-    </p>
-  </div>
+    <div className="h-full flex flex-col">
+      {/* Header / Title / Strong's Panel */}
+      <div className="border-b px-6 py-4 space-y-4">
+        {/* Title */}
+        <div>
+          <h1 className="text-3xl font-serif font-semibold">
+            {book} {chapter}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {selectedTranslation}
+          </p>
+        </div>
 
-  {/* 🔍 Reserved space for search bar in the future */}
-  <div className="h-10 flex items-center">
-    {/* You can replace this div later with a real search bar */}
-    {/* <SearchBar /> */}
-  </div>
+        {/* 🔍 Reserved space for search bar in the future */}
+        <div className="h-10 flex items-center">
+          {/* <SearchBar /> */}
+        </div>
 
-  {/* 📘 Strong’s Inline Definition (header section) */}
-  {selectedStrong && (
-    <div className="mt-2">
-      <StrongDefinitionInline
-        strongsNumbers={selectedStrong.strongsNumbers}
-        activeIndex={selectedStrong.activeIndex}
-        onActiveIndexChange={(index) =>
-          setSelectedStrong({
-            ...selectedStrong,
-            activeIndex: index,
-          })
-        }
-      />
-    </div>
-  )}
-</div>
-
+        {/* 📘 Strong’s Inline Definition (header section) */}
+        {selectedStrong && (
+          <div className="mt-2">
+            <StrongDefinitionInline
+              strongsNumbers={selectedStrong.strongsNumbers}
+              activeIndex={selectedStrong.activeIndex}
+              onActiveIndexChange={(index) =>
+                setSelectedStrong({
+                  ...selectedStrong,
+                  activeIndex: index,
+                })
+              }
+            />
+          </div>
+        )}
+      </div>
 
       <ScrollArea className="flex-1">
         <div
@@ -396,19 +396,6 @@ export function BibleReader({
 
                 return (
                   <span key={verse.id}>
-                    {/* Inline Strong's definition here too */}
-                        {selectedStrong && selectedStrong.verseId === verse.id && (
-      <StrongDefinitionInline
-        strongsNumbers={selectedStrong.strongsNumbers}
-        activeIndex={selectedStrong.activeIndex}
-        onActiveIndexChange={(index) =>
-          setSelectedStrong({
-            ...selectedStrong,
-            activeIndex: index,
-          })
-        }
-      />
-    )}
                     <VerseDisplay
                       verse={verse}
                       highlight={verseHighlight}
@@ -475,21 +462,6 @@ export function BibleReader({
                             />
                           </div>
                         ))}
-
-                        {/* Inline Strong's definition under this verse */}
-                        {selectedStrong &&
-                          selectedStrong.verseId === verse.id && (
-                            <StrongDefinitionInline
-                              strongsNumbers={selectedStrong.strongsNumbers}
-                              activeIndex={selectedStrong.activeIndex}
-                              onActiveIndexChange={(index) =>
-                                setSelectedStrong({
-                                  ...selectedStrong,
-                                  activeIndex: index,
-                                })
-                              }
-                            />
-                          )}
 
                         {!showWordByWord &&
                           wordNotes.map((note) => (
@@ -612,18 +584,6 @@ export function BibleReader({
 
                 return (
                   <div key={verse.id}>
-                    {selectedStrong && selectedStrong.verseId === verse.id && (
-      <StrongDefinitionInline
-        strongsNumbers={selectedStrong.strongsNumbers}
-        activeIndex={selectedStrong.activeIndex}
-        onActiveIndexChange={(index) =>
-          setSelectedStrong({
-            ...selectedStrong,
-            activeIndex: index,
-          })
-        }
-      />
-    )}
                     <VerseDisplay
                       verse={verse}
                       highlight={verseHighlight}
@@ -689,8 +649,6 @@ export function BibleReader({
                             onCancel={() => {}}
                           />
                         ))}
-
-                        
 
                         {!showWordByWord &&
                           wordNotes.map((note) => (
