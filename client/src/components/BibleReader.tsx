@@ -237,25 +237,54 @@ export function BibleReader({
   };
 
   const handleStrongClick = (verseId: string, strongNumber: string) => {
-    const verse = verses.find(v => v.id === verseId) as BibleVerseWithTokens;
-    if (!verse) return;
+  const verse = verses.find(v => v.id === verseId) as BibleVerseWithTokens;
+  if (!verse) return;
 
-    const strongsNumbers = new Set<string>();
-    if (verse.tokens) {
-      verse.tokens.forEach(token => {
-        if (token.strongs) {
-          if (Array.isArray(token.strongs)) {
-            token.strongs.forEach(num => {
-              if (num && num.trim()) {
-                strongsNumbers.add(num.trim());
-              }
-            });
-          } else if (token.strongs.trim()) {
-            strongsNumbers.add(token.strongs.trim());
-          }
+  const strongsNumbers = new Set<string>();
+  if (verse.tokens) {
+    verse.tokens.forEach(token => {
+      if (token.strongs) {
+        if (Array.isArray(token.strongs)) {
+          token.strongs.forEach(num => {
+            if (num && num.trim()) {
+              strongsNumbers.add(num.trim());
+            }
+          });
+        } else if (token.strongs.trim()) {
+          strongsNumbers.add(token.strongs.trim());
         }
-      });
-    }
+      }
+    });
+  }
+
+  const strongsList = Array.from(strongsNumbers);
+
+  if (strongsList.length === 0) {
+    toast({
+      title: "No Strong's numbers",
+      description: `No Strong's data found for this verse.`,
+      variant: "default",
+    });
+    return;
+  }
+
+  // Find the index of the clicked number in the list
+  let clickedIndex = strongsList.indexOf(strongNumber);
+
+  // If for some reason it's not in the list, default to first
+  if (clickedIndex < 0) {
+    clickedIndex = 0;
+  }
+
+  setSelectedStrong({
+    verseId,
+    strongsNumbers: strongsList,
+    activeIndex: clickedIndex,
+    verseReference: `${verse.book} ${verse.chapter}:${verse.verse}`,
+  });
+  setIsStrongDialogOpen(true);
+};
+
 
     const strongsList = Array.from(strongsNumbers);
     
@@ -521,19 +550,55 @@ export function BibleReader({
         />
       )}
 
-      {selectedStrong && (
-        <StrongDefinitions
-          open={isStrongDialogOpen}
-          strongsNumbers={selectedStrong.strongsNumbers}
-          activeIndex={selectedStrong.activeIndex}
-          onActiveIndexChange={(index) => setSelectedStrong({ ...selectedStrong, activeIndex: index })}
-          verseReference={selectedStrong.verseReference}
-          onClose={() => {
-            setIsStrongDialogOpen(false);
-            setSelectedStrong(null);
-          }}
-        />
-      )}
+      const handleStrongClick = (verseId: string, strongNumber: string) => {
+  const verse = verses.find(v => v.id === verseId) as BibleVerseWithTokens;
+  if (!verse) return;
+
+  const strongsNumbers = new Set<string>();
+  if (verse.tokens) {
+    verse.tokens.forEach(token => {
+      if (token.strongs) {
+        if (Array.isArray(token.strongs)) {
+          token.strongs.forEach(num => {
+            if (num && num.trim()) {
+              strongsNumbers.add(num.trim());
+            }
+          });
+        } else if (token.strongs.trim()) {
+          strongsNumbers.add(token.strongs.trim());
+        }
+      }
+    });
+  }
+
+  const strongsList = Array.from(strongsNumbers);
+
+  if (strongsList.length === 0) {
+    toast({
+      title: "No Strong's numbers",
+      description: `No Strong's data found for this verse.`,
+      variant: "default",
+    });
+    return;
+  }
+
+  // Find the index of the clicked number in the list
+  let clickedIndex = strongsList.indexOf(strongNumber);
+
+  // If for some reason it's not in the list, default to first
+  if (clickedIndex < 0) {
+    clickedIndex = 0;
+  }
+
+  setSelectedStrong({
+    verseId,
+    strongsNumbers: strongsList,
+    activeIndex: clickedIndex,
+    verseReference: `${verse.book} ${verse.chapter}:${verse.verse}`,
+  });
+  setIsStrongDialogOpen(true);
+};
+
     </div>
   );
 }
