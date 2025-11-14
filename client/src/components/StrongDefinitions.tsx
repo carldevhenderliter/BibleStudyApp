@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
-import { getStrongsDefinition, StrongsDefinition } from '@/lib/strongsData';
-import { Button } from '@/components/ui/button';
-import { BookOpen, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useEffect, useState } from "react";
+import { loadStrongsDefinition, StrongsDefinition } from "@/lib/strongs";
+import { Button } from "@/components/ui/button";
+import { BookOpen, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -26,39 +26,61 @@ export function StrongDefinitions({
   verseReference,
   onClose,
 }: StrongDefinitionsProps) {
-  const definitions = useMemo(() => {
-    return strongsNumbers
-      .map(num => getStrongsDefinition(num))
-      .filter((def): def is StrongsDefinition => def !== null);
-  }, [strongsNumbers]);
+  const [currentDef, setCurrentDef] = useState<StrongsDefinition | null>(null);
+  const totalCount = strongsNumbers.length;
 
-  if (definitions.length === 0) {
+  // Load the current Strong's definition whenever dialog opens or index changes
+  useEffect(() => {
+    if (!open || totalCount === 0) {
+      setCurrentDef(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      // Guard against out-of-range index
+      const safeIndex =
+        activeIndex >= 0 && activeIndex < totalCount ? activeIndex : 0;
+      const number = strongsNumbers[safeIndex];
+
+      const def = await loadStrongsDefinition(number);
+
+      if (!cancelled) {
+        setCurrentDef(def);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, activeIndex, strongsNumbers, totalCount]);
+
+  // If there are no Strong's numbers at all, don't render the dialog
+  if (totalCount === 0) {
     return null;
   }
-
-  const currentDef = definitions[activeIndex];
-  
-  if (!currentDef) {
-    return null;
-  }
-  
-  const totalCount = definitions.length;
 
   const handlePrevious = () => {
+    if (totalCount === 0) return;
     onActiveIndexChange(activeIndex > 0 ? activeIndex - 1 : totalCount - 1);
   };
 
   const handleNext = () => {
+    if (totalCount === 0) return;
     onActiveIndexChange(activeIndex < totalCount - 1 ? activeIndex + 1 : 0);
   };
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="max-w-2xl" data-testid="dialog-strong-definition">
+      <DialogContent
+        className="max-w-2xl"
+        data-testid="dialog-strong-definition"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <BookOpen className="h-5 w-5 text-primary" />
-            <span>Strong's Concordance - {verseReference}</span>
+            <span>Strong&apos;s Concordance - {verseReference}</span>
           </DialogTitle>
         </DialogHeader>
 
@@ -88,21 +110,44 @@ export function StrongDefinitions({
           </div>
         )}
 
-        <div 
-          className="border-l-4 border-primary/30 pl-4 py-2"
-          data-testid={`strong-def-${currentDef.number}`}
-        >
-          <div className="flex items-baseline gap-2 flex-wrap mb-3">
-            <span className="text-lg font-mono text-primary font-semibold">{currentDef.number}</span>
-            <span className="text-lg font-semibold">{currentDef.transliteration}</span>
-            <span className="text-sm text-muted-foreground italic">({currentDef.pronunciation})</span>
-            <span className="text-sm text-muted-foreground px-2 py-0.5 bg-muted rounded">{currentDef.partOfSpeech}</span>
-          </div>
-          <p className="text-base mb-2">
-            <span className="font-semibold">Definition:</span> {currentDef.definition}
+        {!currentDef ? (
+          <p className="text-sm text-muted-foreground py-4">
+            Loading Strong&apos;s definition…
           </p>
-          <p className="text-sm text-muted-foreground">{currentDef.usage}</p>
-        </div>
+        ) : (
+          <div
+            className="border-l-4 border-primary/30 pl-4 py-2"
+            data-testid={`strong-def-${currentDef.number}`}
+          >
+            <div className="flex items-baseline gap-2 flex-wrap mb-3">
+              <span className="text-lg font-mono text-primary font-semibold">
+                {currentDef.number}
+              </span>
+              <span className="text-lg font-semibold">
+                {currentDef.transliteration}
+              </span>
+              {currentDef.pronunciation && (
+                <span className="text-sm text-muted-foreground italic">
+                  ({currentDef.pronunciation})
+                </span>
+              )}
+              {currentDef.partOfSpeech && (
+                <span className="text-sm text-muted-foreground px-2 py-0.5 bg-muted rounded">
+                  {currentDef.partOfSpeech}
+                </span>
+              )}
+            </div>
+            <p className="text-base mb-2">
+              <span className="font-semibold">Definition:</span>{" "}
+              {currentDef.definition}
+            </p>
+            {currentDef.usage && (
+              <p className="text-sm text-muted-foreground">
+                {currentDef.usage}
+              </p>
+            )}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
