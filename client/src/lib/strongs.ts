@@ -15,8 +15,10 @@ type RawStrongsEntry = {
   kjv_def?: string;
   pronunciation?: string;
   pos?: string;
+  morph?: string;     // 👈 add this
   [key: string]: unknown;
 };
+
 
 let greekCache: Record<string, RawStrongsEntry> | null = null;
 let hebrewCache: Record<string, RawStrongsEntry> | null = null;
@@ -53,6 +55,24 @@ async function loadHebrewRaw() {
   return hebrewCache;
 }
 
+function morphToPartOfSpeech(morph?: string): string {
+  if (!morph) return "";
+
+  const code = morph.toLowerCase();
+
+  // Super simple examples – adjust if your JSON uses different codes
+  if (code.startsWith("n")) return "noun";
+  if (code.startsWith("v")) return "verb";
+  if (code.startsWith("a")) return "adjective";
+  if (code.startsWith("adv")) return "adverb";
+  if (code.startsWith("prep")) return "preposition";
+  if (code.startsWith("conj")) return "conjunction";
+  if (code.startsWith("pron")) return "pronoun";
+
+  return morph; // fallback: show raw code
+}
+
+
 // Map the raw JSON entry into your StrongsDefinition shape
 // Map the raw JSON entry into your StrongsDefinition shape
 function mapRawToDefinition(
@@ -74,10 +94,11 @@ function mapRawToDefinition(
     "";
 
   const partOfSpeech =
-    (raw.pos as string | undefined) ??
-    (raw.part as string | undefined) ??
-    (raw.partOfSpeech as string | undefined) ??
-    "";
+  (raw.pos as string | undefined) ??
+  (raw.part as string | undefined) ??
+  (raw.partOfSpeech as string | undefined) ??
+  morphToPartOfSpeech(raw.morph as string | undefined);
+
 
   const definition =
     (raw.strongs_def as string | undefined) ??
