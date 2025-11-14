@@ -3,7 +3,7 @@ import { BibleVerse, Highlight, Note } from "@shared/schema";
 import { VerseDisplay } from "./VerseDisplay";
 import { NoteEditor } from "./NoteEditor";
 import { HighlightToolbar } from "./HighlightToolbar";
-import { StrongDefinitions } from "./StrongDefinitions";
+import { StrongDefinitionInline } from "./StrongDefinitionInline";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   getVersesByChapter,
@@ -70,7 +70,7 @@ export function BibleReader({
   const [selectedStrong, setSelectedStrong] = useState<SelectedStrong | null>(
     null
   );
-  const [isStrongDialogOpen, setIsStrongDialogOpen] = useState(false);
+  
   const { toast } = useToast();
 
   // Load verses + saved highlights/notes
@@ -287,27 +287,52 @@ export function BibleReader({
   };
 
   const handleStrongClick = (verseId: string, strongNumber: string) => {
-    const verse = verses.find(
-      (v) => v.id === verseId
-    ) as BibleVerseWithTokens | undefined;
-    if (!verse) return;
+  const verse = verses.find(
+    (v) => v.id === verseId
+  ) as BibleVerseWithTokens | undefined;
+  if (!verse) return;
 
-    const strongsNumbers = new Set<string>();
-    if (verse.tokens) {
-      verse.tokens.forEach((token) => {
-        if (token.strongs) {
-          if (Array.isArray(token.strongs)) {
-            token.strongs.forEach((num) => {
-              if (num && num.trim()) {
-                strongsNumbers.add(num.trim());
-              }
-            });
-          } else if (token.strongs.trim()) {
-            strongsNumbers.add(token.strongs.trim());
-          }
+  const strongsNumbers = new Set<string>();
+  if (verse.tokens) {
+    verse.tokens.forEach((token) => {
+      if (token.strongs) {
+        if (Array.isArray(token.strongs)) {
+          token.strongs.forEach((num) => {
+            if (num && num.trim()) {
+              strongsNumbers.add(num.trim());
+            }
+          });
+        } else if (token.strongs.trim()) {
+          strongsNumbers.add(token.strongs.trim());
         }
-      });
-    }
+      }
+    });
+  }
+
+  const strongsList = Array.from(strongsNumbers);
+
+  if (strongsList.length === 0) {
+    toast({
+      title: "No Strong's numbers",
+      description: `No Strong's data found for this verse.`,
+      variant: "default",
+    });
+    return;
+  }
+
+  let clickedIndex = strongsList.indexOf(strongNumber);
+  if (clickedIndex < 0) {
+    clickedIndex = 0;
+  }
+
+  setSelectedStrong({
+    verseId,
+    strongsNumbers: strongsList,
+    activeIndex: clickedIndex,
+    verseReference: `${verse.book} ${verse.chapter}:${verse.verse}`,
+  });
+};
+
 
     const strongsList = Array.from(strongsNumbers);
 
@@ -447,6 +472,18 @@ export function BibleReader({
                             />
                           </div>
                         ))}
+                        {selectedStrong && selectedStrong.verseId === verse.id && (
+        <StrongDefinitionInline
+          strongsNumbers={selectedStrong.strongsNumbers}
+          activeIndex={selectedStrong.activeIndex}
+          onActiveIndexChange={(index) =>
+            setSelectedStrong({
+              ...selectedStrong,
+              activeIndex: index,
+            })
+          }
+        />
+      )}
 
                         {!showWordByWord &&
                           wordNotes.map((note) => (
@@ -747,22 +784,7 @@ export function BibleReader({
         />
       )}
 
-      {selectedStrong && (
-        <StrongDefinitions
-          open={isStrongDialogOpen}
-          strongsNumbers={selectedStrong.strongsNumbers}
-          activeIndex={selectedStrong.activeIndex}
-          onActiveIndexChange={(index) =>
-            setSelectedStrong({
-              ...selectedStrong,
-              activeIndex: index,
-            })
-          }
-          verseReference={selectedStrong.verseReference}
-          onClose={() => {
-            setIsStrongDialogOpen(false);
-            setSelectedStrong(null);
-          }}
+      
         />
       )}
     </div>
