@@ -6,7 +6,6 @@ import { HighlightToolbar } from './HighlightToolbar';
 import { StrongDefinitions } from './StrongDefinitions';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { getVersesByChapter, BibleVerseWithTokens, Translation } from '@/lib/bibleData';
-import { getStrongsDefinition } from '@/lib/strongsData';
 import { useToast } from '@/hooks/use-toast';
 
 interface BibleReaderProps {
