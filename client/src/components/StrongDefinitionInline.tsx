@@ -1,24 +1,48 @@
 import { useMemo } from "react";
-import { getStrongsDefinition, StrongsDefinition } from "@/lib/strongsData";
+import { getStrongsDefinition } from "@/lib/strongsData";
+
+// Be flexible about the shape coming back from your JSON
+export type StrongDefinitionShape = {
+  number?: string;
+  lemma?: string;
+  transliteration?: string;
+  pronunciation?: string;
+  partOfSpeech?: string;
+  // some JSONs use `definition`, some `strongs_def`
+  definition?: string;
+  strongs_def?: string;
+  // some use `usage`, some `kjv_def`
+  usage?: string;
+  kjv_def?: string;
+  derivation?: string;
+};
 
 interface StrongDefinitionInlineProps {
   strongsNumbers: string[];
-  activeIndex: number;                  // we still accept this to match BibleReader
-  onActiveIndexChange?: (index: number) => void; // kept optional for future use
+  activeIndex: number;
+  onActiveIndexChange?: (index: number) => void; // kept for future use
 }
 
 export function StrongDefinitionInline({
   strongsNumbers,
   activeIndex,
 }: StrongDefinitionInlineProps) {
-  // We expect only one Strong's, but this keeps it safe
+  // Safely pick a Strong’s number
   const strongNumber = strongsNumbers[activeIndex] ?? strongsNumbers[0];
 
-  const definition = useMemo<StrongsDefinition | null>(() => {
+  const definition = useMemo<StrongDefinitionShape | null>(() => {
     if (!strongNumber) return null;
-    return getStrongsDefinition(strongNumber);
+    try {
+      const def = getStrongsDefinition(strongNumber);
+      if (!def) return null;
+      return def as StrongDefinitionShape;
+    } catch (err) {
+      console.error("Error loading Strong's definition for", strongNumber, err);
+      return null;
+    }
   }, [strongNumber]);
 
+  // If we have no number or no definition, render nothing (but don’t crash)
   if (!strongNumber || !definition) {
     return null;
   }
@@ -29,10 +53,15 @@ export function StrongDefinitionInline({
     transliteration,
     pronunciation,
     partOfSpeech,
-    definition: gloss,
+    definition: gloss1,
+    strongs_def: gloss2,
     usage,
+    kjv_def,
     derivation,
-  } = definition as any;
+  } = definition;
+
+  const gloss = gloss1 ?? gloss2;
+  const usageText = usage ?? kjv_def;
 
   return (
     <div className="mt-3 rounded-lg border bg-muted/40 px-4 py-3 text-sm shadow-sm">
@@ -71,7 +100,7 @@ export function StrongDefinitionInline({
         )}
       </div>
 
-      {/* Derivation (if present) */}
+      {/* Derivation */}
       {derivation && (
         <p className="mt-2 text-xs text-muted-foreground">
           <span className="font-semibold">From: </span>
@@ -87,10 +116,10 @@ export function StrongDefinitionInline({
         </p>
       )}
 
-      {/* KJV usage / gloss list */}
-      {usage && (
-        <p className="mt-1 text-xs text-muted-foreground leading-snug">
-          {usage}
+      {/* Usage / KJV gloss list */}
+      {usageText && (
+        <p className="mt-1 text-xs text-muted-foreground leading-snug whitespace-pre-line">
+          {usageText}
         </p>
       )}
     </div>
