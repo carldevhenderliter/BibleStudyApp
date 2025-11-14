@@ -11,6 +11,7 @@ import {
   Translation,
 } from "@/lib/bibleData";
 import { useToast } from "@/hooks/use-toast";
+import { Search } from "lucide-react"; // 🔍 NEW
 
 interface BibleReaderProps {
   book: string;
@@ -67,9 +68,10 @@ export function BibleReader({
     verseId: string;
     text: string;
   } | null>(null);
-  const [selectedStrong, setSelectedStrong] = useState<SelectedStrong | null>(
-    null
-  );
+  const [selectedStrong, setSelectedStrong] = useState<SelectedStrong | null>(null);
+
+  const [searchQuery, setSearchQuery] = useState(""); // 🔍 NEW
+  const hasSelectedStrong = !!selectedStrong; // 🔍 NEW
 
   const { toast } = useToast();
 
@@ -285,9 +287,7 @@ export function BibleReader({
   };
 
   const handleStrongClick = (verseId: string, strongNumber: string) => {
-    const verse = verses.find(
-      (v) => v.id === verseId
-    ) as BibleVerseWithTokens | undefined;
+    const verse = verses.find((v) => v.id === verseId) as BibleVerseWithTokens;
     if (!verse) return;
 
     const strongsNumbers = new Set<string>();
@@ -295,12 +295,8 @@ export function BibleReader({
       verse.tokens.forEach((token) => {
         if (token.strongs) {
           if (Array.isArray(token.strongs)) {
-            token.strongs.forEach((num) => {
-              if (num && num.trim()) {
-                strongsNumbers.add(num.trim());
-              }
-            });
-          } else if (token.strongs.trim()) {
+            token.strongs.forEach((num) => num && strongsNumbers.add(num.trim()));
+          } else {
             strongsNumbers.add(token.strongs.trim());
           }
         }
@@ -308,20 +304,10 @@ export function BibleReader({
     }
 
     const strongsList = Array.from(strongsNumbers);
-
-    if (strongsList.length === 0) {
-      toast({
-        title: "No Strong's numbers",
-        description: `No Strong's data found for this verse.`,
-        variant: "default",
-      });
-      return;
-    }
+    if (strongsList.length === 0) return;
 
     let clickedIndex = strongsList.indexOf(strongNumber);
-    if (clickedIndex < 0) {
-      clickedIndex = 0;
-    }
+    if (clickedIndex < 0) clickedIndex = 0;
 
     setSelectedStrong({
       verseId,
@@ -333,420 +319,192 @@ export function BibleReader({
 
   return (
     <div className="h-full flex flex-col">
-    {/* Header / Title / Search / Strong's Panel */}
-    <div
-      className={`border-b px-6 ${
-        hasSelectedStrong ? "py-4 space-y-3" : "py-3 space-y-2"
-      }`}
-    >
-      {/* Title + Search row */}
-      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-        {/* Title */}
-        <div>
-          <h1 className="text-2xl md:text-3xl font-serif font-semibold">
-            {book} {chapter}
-          </h1>
-          <p className="text-xs md:text-sm text-muted-foreground mt-1">
-            {selectedTranslation}
-          </p>
-        </div>
+      {/* HEADER */}
+      <div
+        className={`border-b px-6 transition-all ${
+          hasSelectedStrong ? "py-4 space-y-3" : "py-3 space-y-2"
+        }`}
+      >
+        {/* Title + Search bar */}
+        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-serif font-semibold">
+              {book} {chapter}
+            </h1>
+            <p className="text-xs md:text-sm text-muted-foreground mt-1">
+              {selectedTranslation}
+            </p>
+          </div>
 
-        {/* Sleek search bar */}
-        <div className="w-full max-w-xs md:max-w-sm">
-          <div className="relative">
-            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground/70">
-              <Search className="h-4 w-4" />
-            </span>
-            <input
-              type="text"
-              className="w-full rounded-full border border-border bg-background/80 px-9 py-1.5 text-sm shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-              placeholder="Search (coming soon)…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
+          {/* Sleek rounded Search */}
+          <div className="w-full max-w-xs md:max-w-sm">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 h-4 w-4 pointer-events-none" />
+              <input
+                type="text"
+                className="w-full rounded-full border border-border bg-background/80 px-9 py-1.5 text-sm shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                placeholder="Search (coming soon)…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
           </div>
         </div>
+
+        {/* Strong’s inline definition under header */}
+        {hasSelectedStrong && selectedStrong && (
+          <div className="pt-2">
+            <StrongDefinitionInline
+              strongsNumbers={selectedStrong.strongsNumbers}
+              activeIndex={selectedStrong.activeIndex}
+              onActiveIndexChange={(index) =>
+                setSelectedStrong({
+                  ...selectedStrong,
+                  activeIndex: index,
+                })
+              }
+            />
+          </div>
+        )}
       </div>
 
-      {/* 📘 Strong’s Inline Definition (only when one is selected) */}
-      {hasSelectedStrong && selectedStrong && (
-        <div className="pt-2">
-          <StrongDefinitionInline
-            strongsNumbers={selectedStrong.strongsNumbers}
-            activeIndex={selectedStrong.activeIndex}
-            onActiveIndexChange={(index) =>
-              setSelectedStrong({
-                ...selectedStrong,
-                activeIndex: index,
-              })
-            }
-          />
-        </div>
-      )}
-    </div>
-
+      {/* MAIN SCROLL AREA */}
       <ScrollArea className="flex-1">
-        <div
-          className="max-w-3xl mx-auto px-6 py-8"
-          style={{ fontSize: `${fontSize}px` }}
-        >
-          {displayMode === "book" ? (
-            <div className="font-serif text-base leading-relaxed">
-              {verses.map((verse) => {
-                const verseNotes = notes.filter(
-                  (n) => n.verseId === verse.id && n.wordIndex === undefined
-                );
-                const wordNotes = notes.filter(
-                  (n) => n.verseId === verse.id && n.wordIndex !== undefined
-                );
-                const verseHighlight = highlights.find(
-                  (h) => h.verseId === verse.id && h.wordIndex === undefined
-                );
-                const wordHighlights = highlights.filter(
-                  (h) => h.verseId === verse.id && h.wordIndex !== undefined
-                );
-                const verseWithTokens = verse as BibleVerseWithTokens;
-                const hasTokens =
-                  verseWithTokens.tokens &&
-                  verseWithTokens.tokens.length > 0;
-                const showWordByWord =
-                  (showStrongsNumbers || showInterlinear) && hasTokens;
+        <div className="max-w-3xl mx-auto px-6 py-8" style={{ fontSize }}>
+          {verses.map((verse) => {
+            const verseNotes = notes.filter(
+              (n) => n.verseId === verse.id && n.wordIndex === undefined
+            );
+            const wordNotes = notes.filter(
+              (n) => n.verseId === verse.id && n.wordIndex !== undefined
+            );
+            const verseHighlight = highlights.find(
+              (h) => h.verseId === verse.id && h.wordIndex === undefined
+            );
+            const wordHighlights = highlights.filter(
+              (h) => h.verseId === verse.id && h.wordIndex !== undefined
+            );
+            const verseWithTokens = verse as BibleVerseWithTokens;
+            const hasTokens = verseWithTokens.tokens?.length;
+            const showWordByWord =
+              (showStrongsNumbers || showInterlinear) && hasTokens;
 
-                return (
-                  <span key={verse.id}>
-                    <VerseDisplay
-                      verse={verse}
-                      highlight={verseHighlight}
-                      wordHighlights={wordHighlights}
-                      showStrongsNumbers={showStrongsNumbers}
-                      showInterlinear={showInterlinear}
-                      showNotes={showNotes}
-                      displayMode={displayMode}
-                      showWordByWord={showWordByWord}
-                      onAddNote={() =>
-                        setAddingNote({ verseId: verse.id })
-                      }
-                      onAddWordNote={(wordIndex, wordText) =>
-                        handleAddWordNote(
-                          verse.id,
-                          wordIndex,
-                          wordText
-                        )
-                      }
-                      onSaveWordNote={handleSaveWordNote}
-                      onCancelWordNote={handleCancelWordNote}
-                      onHighlightWord={(wordIndex, wordText, color) =>
-                        handleHighlightWord(
-                          verse.id,
-                          wordIndex,
-                          wordText,
-                          color as HighlightColor
-                        )
-                      }
-                      onTextSelect={(text) =>
-                        handleTextSelect(verse.id, text)
-                      }
-                      onStrongClick={(strongNumber) =>
-                        handleStrongClick(verse.id, strongNumber)
-                      }
-                      wordNotes={wordNotes}
-                      activeWordNote={
-                        addingNote?.verseId === verse.id &&
-                        addingNote.wordIndex !== undefined
-                          ? {
-                              verseId: addingNote.verseId,
-                              wordIndex: addingNote.wordIndex,
-                              wordText: addingNote.wordText,
-                            }
-                          : null
-                      }
+            return (
+              <div key={verse.id}>
+                <VerseDisplay
+                  verse={verse}
+                  highlight={verseHighlight}
+                  wordHighlights={wordHighlights}
+                  showStrongsNumbers={showStrongsNumbers}
+                  showInterlinear={showInterlinear}
+                  showNotes={showNotes}
+                  displayMode={displayMode}
+                  showWordByWord={showWordByWord}
+                  onAddNote={() => setAddingNote({ verseId: verse.id })}
+                  onAddWordNote={(wordIndex, wordText) =>
+                    handleAddWordNote(verse.id, wordIndex, wordText)
+                  }
+                  onSaveWordNote={handleSaveWordNote}
+                  onCancelWordNote={handleCancelWordNote}
+                  onHighlightWord={(wordIndex, wordText, color) =>
+                    handleHighlightWord(
+                      verse.id,
+                      wordIndex,
+                      wordText,
+                      color as HighlightColor
+                    )
+                  }
+                  onTextSelect={(text) => handleTextSelect(verse.id, text)}
+                  onStrongClick={(strongNumber) =>
+                    handleStrongClick(verse.id, strongNumber)
+                  }
+                  wordNotes={wordNotes}
+                  activeWordNote={
+                    addingNote?.verseId === verse.id &&
+                    addingNote.wordIndex !== undefined
+                      ? {
+                          verseId: addingNote.verseId,
+                          wordIndex: addingNote.wordIndex,
+                          wordText: addingNote.wordText,
+                        }
+                      : null
+                  }
+                />
+
+                {/* Notes */}
+                {showNotes &&
+                  verseNotes.map((note) => (
+                    <NoteEditor
+                      key={note.id}
+                      note={note}
+                      verseId={verse.id}
+                      verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
+                      onSave={(content) => handleUpdateNote(note.id, content)}
+                      onDelete={() => handleDeleteNote(note.id)}
+                      onCancel={() => {}}
                     />
+                  ))}
 
-                    {showNotes && (
-                      <>
-                        {verseNotes.map((note) => (
-                          <div key={note.id} className="block my-4">
-                            <NoteEditor
-                              note={note}
-                              verseId={verse.id}
-                              verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
-                              onSave={(content) =>
-                                handleUpdateNote(note.id, content)
-                              }
-                              onDelete={() =>
-                                handleDeleteNote(note.id)
-                              }
-                              onCancel={() => {}}
-                            />
-                          </div>
-                        ))}
-
-                        {!showWordByWord &&
-                          wordNotes.map((note) => (
-                            <div
-                              key={note.id}
-                              className="block my-4"
-                            >
-                              <NoteEditor
-                                note={note}
-                                verseId={verse.id}
-                                verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
-                                wordText={note.wordText}
-                                onSave={(content) =>
-                                  handleUpdateNote(
-                                    note.id,
-                                    content
-                                  )
-                                }
-                                onDelete={() =>
-                                  handleDeleteNote(note.id)
-                                }
-                                onCancel={() => {}}
-                              />
-                            </div>
-                          ))}
-
-                        {!showWordByWord &&
-                          addingNote?.verseId === verse.id && (
-                            <div className="block my-4">
-                              <NoteEditor
-                                note={
-                                  addingNote.wordIndex !==
-                                  undefined
-                                    ? wordNotes.find(
-                                        (n) =>
-                                          n.wordIndex ===
-                                          addingNote.wordIndex
-                                      )
-                                    : undefined
-                                }
-                                verseId={verse.id}
-                                verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
-                                wordText={addingNote.wordText}
-                                onSave={(content) => {
-                                  if (
-                                    addingNote.wordIndex !==
-                                    undefined
-                                  ) {
-                                    const existingNote =
-                                      wordNotes.find(
-                                        (n) =>
-                                          n.wordIndex ===
-                                          addingNote.wordIndex
-                                      );
-                                    if (existingNote) {
-                                      handleUpdateNote(
-                                        existingNote.id,
-                                        content
-                                      );
-                                    } else {
-                                      handleSaveNote(content);
-                                    }
-                                  } else {
-                                    handleSaveNote(content);
-                                  }
-                                  setAddingNote(null);
-                                }}
-                                onDelete={() => {
-                                  if (
-                                    addingNote.wordIndex !==
-                                    undefined
-                                  ) {
-                                    const existingNote =
-                                      wordNotes.find(
-                                        (n) =>
-                                          n.wordIndex ===
-                                          addingNote.wordIndex
-                                      );
-                                    if (existingNote) {
-                                      handleDeleteNote(
-                                        existingNote.id
-                                      );
-                                    }
-                                  }
-                                  setAddingNote(null);
-                                }}
-                                onCancel={() =>
-                                  setAddingNote(null)
-                                }
-                              />
-                            </div>
-                          )}
-                      </>
-                    )}
-                  </span>
-                );
-              })}
-            </div>
-          ) : (
-            <>
-              {verses.map((verse) => {
-                const verseNotes = notes.filter(
-                  (n) => n.verseId === verse.id && n.wordIndex === undefined
-                );
-                const wordNotes = notes.filter(
-                  (n) => n.verseId === verse.id && n.wordIndex !== undefined
-                );
-                const verseHighlight = highlights.find(
-                  (h) => h.verseId === verse.id && h.wordIndex === undefined
-                );
-                const wordHighlights = highlights.filter(
-                  (h) => h.verseId === verse.id && h.wordIndex !== undefined
-                );
-                const verseWithTokens = verse as BibleVerseWithTokens;
-                const hasTokens =
-                  verseWithTokens.tokens &&
-                  verseWithTokens.tokens.length > 0;
-                const showWordByWord =
-                  (showStrongsNumbers || showInterlinear) && hasTokens;
-
-                return (
-                  <div key={verse.id}>
-                    <VerseDisplay
-                      verse={verse}
-                      highlight={verseHighlight}
-                      wordHighlights={wordHighlights}
-                      showStrongsNumbers={showStrongsNumbers}
-                      showInterlinear={showInterlinear}
-                      showNotes={showNotes}
-                      displayMode={displayMode}
-                      showWordByWord={showWordByWord}
-                      onAddNote={() =>
-                        setAddingNote({ verseId: verse.id })
-                      }
-                      onAddWordNote={(wordIndex, wordText) =>
-                        handleAddWordNote(
-                          verse.id,
-                          wordIndex,
-                          wordText
-                        )
-                      }
-                      onSaveWordNote={handleSaveWordNote}
-                      onCancelWordNote={handleCancelWordNote}
-                      onHighlightWord={(wordIndex, wordText, color) =>
-                        handleHighlightWord(
-                          verse.id,
-                          wordIndex,
-                          wordText,
-                          color as HighlightColor
-                        )
-                      }
-                      onTextSelect={(text) =>
-                        handleTextSelect(verse.id, text)
-                      }
-                      onStrongClick={(strongNumber) =>
-                        handleStrongClick(verse.id, strongNumber)
-                      }
-                      wordNotes={wordNotes}
-                      activeWordNote={
-                        addingNote?.verseId === verse.id &&
-                        addingNote.wordIndex !== undefined
-                          ? {
-                              verseId: addingNote.verseId,
-                              wordIndex: addingNote.wordIndex,
-                              wordText: addingNote.wordText,
-                            }
-                          : null
-                      }
+                {/* Word notes */}
+                {showNotes &&
+                  wordNotes.map((note) => (
+                    <NoteEditor
+                      key={note.id}
+                      note={note}
+                      verseId={verse.id}
+                      verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
+                      wordText={note.wordText}
+                      onSave={(content) => handleUpdateNote(note.id, content)}
+                      onDelete={() => handleDeleteNote(note.id)}
+                      onCancel={() => {}}
                     />
+                  ))}
 
-                    {showNotes && (
-                      <>
-                        {verseNotes.map((note) => (
-                          <NoteEditor
-                            key={note.id}
-                            note={note}
-                            verseId={verse.id}
-                            verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
-                            onSave={(content) =>
-                              handleUpdateNote(note.id, content)
-                            }
-                            onDelete={() =>
-                              handleDeleteNote(note.id)
-                            }
-                            onCancel={() => {}}
-                          />
-                        ))}
-
-                        {!showWordByWord &&
-                          wordNotes.map((note) => (
-                            <NoteEditor
-                              key={note.id}
-                              note={note}
-                              verseId={verse.id}
-                              verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
-                              wordText={note.wordText}
-                              onSave={(content) =>
-                                handleUpdateNote(note.id, content)
-                              }
-                              onDelete={() =>
-                                handleDeleteNote(note.id)
-                              }
-                              onCancel={() => {}}
-                            />
-                          ))}
-
-                        {addingNote?.verseId === verse.id && (
-                          <NoteEditor
-                            note={
-                              addingNote.wordIndex !== undefined
-                                ? wordNotes.find(
-                                    (n) =>
-                                      n.wordIndex ===
-                                      addingNote.wordIndex
-                                  )
-                                : undefined
-                            }
-                            verseId={verse.id}
-                            verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
-                            wordText={addingNote.wordText}
-                            onSave={(content) => {
-                              if (addingNote.wordIndex !== undefined) {
-                                const existingNote = wordNotes.find(
-                                  (n) =>
-                                    n.wordIndex ===
-                                    addingNote.wordIndex
-                                );
-                                if (existingNote) {
-                                  handleUpdateNote(
-                                    existingNote.id,
-                                    content
-                                  );
-                                } else {
-                                  handleSaveNote(content);
-                                }
-                              } else {
-                                handleSaveNote(content);
-                              }
-                              setAddingNote(null);
-                            }}
-                            onDelete={() => {
-                              if (addingNote.wordIndex !== undefined) {
-                                const existingNote = wordNotes.find(
-                                  (n) =>
-                                    n.wordIndex ===
-                                    addingNote.wordIndex
-                                );
-                                if (existingNote) {
-                                  handleDeleteNote(
-                                    existingNote.id
-                                  );
-                                }
-                              }
-                              setAddingNote(null);
-                            }}
-                            onCancel={() =>
-                              setAddingNote(null)
-                            }
-                          />
-                        )}
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </>
-          )}
+                {/* Adding new note */}
+                {addingNote?.verseId === verse.id && (
+                  <NoteEditor
+                    note={
+                      addingNote.wordIndex !== undefined
+                        ? wordNotes.find(
+                            (n) => n.wordIndex === addingNote.wordIndex
+                          )
+                        : undefined
+                    }
+                    verseId={verse.id}
+                    verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
+                    wordText={addingNote.wordText}
+                    onSave={(content) => {
+                      if (addingNote.wordIndex !== undefined) {
+                        const existingNote = wordNotes.find(
+                          (n) => n.wordIndex === addingNote.wordIndex
+                        );
+                        if (existingNote) {
+                          handleUpdateNote(existingNote.id, content);
+                        } else {
+                          handleSaveNote(content);
+                        }
+                      } else {
+                        handleSaveNote(content);
+                      }
+                      setAddingNote(null);
+                    }}
+                    onDelete={() => {
+                      if (addingNote.wordIndex !== undefined) {
+                        const existingNote = wordNotes.find(
+                          (n) => n.wordIndex === addingNote.wordIndex
+                        );
+                        if (existingNote) {
+                          handleDeleteNote(existingNote.id);
+                        }
+                      }
+                      setAddingNote(null);
+                    }}
+                    onCancel={() => setAddingNote(null)}
+                  />
+                )}
+              </div>
+            );
+          })}
 
           {verses.length === 0 && (
             <div className="text-center text-muted-foreground py-12">
