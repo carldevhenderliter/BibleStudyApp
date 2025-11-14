@@ -1,67 +1,74 @@
-// src/lib/strongsData.ts
+// client/src/lib/strongsData.ts
+// Make sure this path matches where your JSON actually lives:
+//   client/src/Strongs_Definitions/strongs-greek.json
+import greekRaw from "../Strongs_Definitions/strongs-greek.json";
 
-export type StrongsDefinition = {
-  number: string;          // e.g. "G1615"
-  lemma?: string;          // Greek/Hebrew script: "ἐκτελέω"
-  transliteration?: string; // "ekteléō"
-  pronunciation?: string;
-  partOfSpeech?: string;   // from "pos" if present
-  definition?: string;     // from "strongs_def"
-  usage?: string;          // from "kjv_def"
-  derivation?: string;     // from "derivation"
-};
+export interface StrongsDefinition {
+  number: string;          // e.g. "G3056"
+  lemma?: string;          // e.g. "λόγος"
+  transliteration?: string; // e.g. "logos"
+  pronunciation?: string;  // if you add later
+  partOfSpeech?: string;   // if you add later
+  definition?: string;     // main Strong's gloss
+  usage?: string;          // KJV usage list
+  derivation?: string;     // derivation
+}
 
-// This type matches your raw JSON entries:
-// "G1615": { "strongs_def": "...", "derivation": "...", "translit": "...", "lemma": "...", "kjv_def": "finish" }
-type RawStrongsEntry = {
+// This matches the JSON you showed:
+// "G1615": {
+//   "strongs_def": " to complete fully",
+//   "derivation": "from G1537 (ἐκ) and G5055 (τελέω);",
+//   "translit": "ekteléō",
+//   "lemma": "ἐκτελέω",
+//   "kjv_def": "finish"
+// }
+type RawGreekEntry = {
   strongs_def?: string;
   derivation?: string;
   translit?: string;
   lemma?: string;
   kjv_def?: string;
-  pos?: string;
-  pronunciation?: string;
 };
 
-// ⚠️ Adjust these paths if needed to match your repo
-import greekRaw from "../Strongs_Defintions/strongs-greek.json";
-import hebrewRaw from "../Strongs_Defintions/strongs-hebrew.json";
+// Tell TS what shape the imported JSON has
+const greekData = greekRaw as Record<string, RawGreekEntry>;
 
-const strongsGreek = greekRaw as Record<string, RawStrongsEntry>;
-const strongsHebrew = hebrewRaw as Record<string, RawStrongsEntry>;
-
-function normalizeStrongs(
-  number: string,
-  raw?: RawStrongsEntry
-): StrongsDefinition | null {
-  if (!raw) return null;
-
+function normalizeGreekEntry(
+  key: string,
+  raw: RawGreekEntry
+): StrongsDefinition {
   return {
-    number,
+    number: key,
     lemma: raw.lemma,
     transliteration: raw.translit,
-    pronunciation: raw.pronunciation,
-    partOfSpeech: raw.pos,
-    definition: raw.strongs_def,
+    pronunciation: undefined, // you can wire this up later if in JSON
+    partOfSpeech: undefined,  // same here
+    definition: raw.strongs_def?.trim(),
     usage: raw.kjv_def,
     derivation: raw.derivation,
   };
 }
 
-export function getStrongsDefinition(number: string): StrongsDefinition | null {
-  if (!number) return null;
+/**
+ * Get a Strong's definition by number, e.g. "G3056" or "3056".
+ * Returns null if not found.
+ */
+export function getStrongsDefinition(
+  strongNumber: string
+): StrongsDefinition | null {
+  if (!strongNumber) return null;
 
-  const key = number.toUpperCase().trim(); // e.g. "G1615", "H7225"
-
-  if (key.startsWith("G")) {
-    const raw = strongsGreek[key];
-    return normalizeStrongs(key, raw);
+  // Normalize: if it doesn’t start with G/H, assume Greek "G"
+  let key = strongNumber.toUpperCase().trim();
+  if (!key.startsWith("G") && !key.startsWith("H")) {
+    key = `G${key}`;
   }
 
-  if (key.startsWith("H")) {
-    const raw = strongsHebrew[key];
-    return normalizeStrongs(key, raw);
+  const raw = greekData[key];
+  if (!raw) {
+    console.warn(`No Strong's entry found for`, key);
+    return null;
   }
 
-  return null;
+  return normalizeGreekEntry(key, raw);
 }
