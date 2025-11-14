@@ -590,6 +590,18 @@ export function BibleReader({
 
                 return (
                   <div key={verse.id}>
+                    {selectedStrong && selectedStrong.verseId === verse.id && (
+      <StrongDefinitionInline
+        strongsNumbers={selectedStrong.strongsNumbers}
+        activeIndex={selectedStrong.activeIndex}
+        onActiveIndexChange={(index) =>
+          setSelectedStrong({
+            ...selectedStrong,
+            activeIndex: index,
+          })
+        }
+      />
+    )}
                     <VerseDisplay
                       verse={verse}
                       highlight={verseHighlight}
