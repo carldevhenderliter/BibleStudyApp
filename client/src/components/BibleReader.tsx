@@ -11,7 +11,7 @@ import {
   Translation,
 } from "@/lib/bibleData";
 import { useToast } from "@/hooks/use-toast";
-import { Search } from "lucide-react";
+import { Search, ChevronDown } from "lucide-react";
 
 interface BibleReaderProps {
   book: string;
@@ -55,7 +55,7 @@ export function BibleReader({
   showInterlinear,
   showNotes,
   fontSize,
-  displayMode,
+  displayMode, // currently not changing layout, but kept for future
   selectedTranslation,
 }: BibleReaderProps) {
   const [verses, setVerses] = useState<BibleVerseWithTokens[]>([]);
@@ -72,7 +72,7 @@ export function BibleReader({
     null
   );
 
-  const [searchQuery, setSearchQuery] = useState(""); // placeholder for future: "Matthew 5:4"
+  const [searchQuery, setSearchQuery] = useState(""); // future: "Matt 5:4", word search, Strong’s search
   const hasSelectedStrong = !!selectedStrong;
 
   const { toast } = useToast();
@@ -238,7 +238,9 @@ export function BibleReader({
     if (!addingNote) return;
 
     const existingNote = notes.find(
-      (n) => n.verseId === addingNote.verseId && n.wordIndex === Number(wordIndex)
+      (n) =>
+        n.verseId === addingNote.verseId &&
+        n.wordIndex === Number(wordIndex)
     );
     if (existingNote) {
       handleUpdateNote(existingNote.id, content);
@@ -289,7 +291,22 @@ export function BibleReader({
   };
 
   const handleStrongClick = (verseId: string, strongNumber: string) => {
-    const verse = verses.find((v) => v.id === verseId) as BibleVerseWithTokens;
+    const normalizedStrong = strongNumber.trim();
+
+    // 🔁 Toggle off if the same Strong’s (same verse + same active number) is clicked again
+    if (selectedStrong) {
+      const sameVerse = selectedStrong.verseId === verseId;
+      const currentNumber =
+        selectedStrong.strongsNumbers[selectedStrong.activeIndex];
+      if (sameVerse && currentNumber === normalizedStrong) {
+        setSelectedStrong(null);
+        return;
+      }
+    }
+
+    const verse = verses.find(
+      (v) => v.id === verseId
+    ) as BibleVerseWithTokens | undefined;
     if (!verse) return;
 
     const strongsNumbers = new Set<string>();
@@ -298,10 +315,12 @@ export function BibleReader({
         if (token.strongs) {
           if (Array.isArray(token.strongs)) {
             token.strongs.forEach((num) => {
-              if (num && num.trim()) strongsNumbers.add(num.trim());
+              const trimmed = num && num.trim();
+              if (trimmed) strongsNumbers.add(trimmed);
             });
-          } else if (token.strongs.trim()) {
-            strongsNumbers.add(token.strongs.trim());
+          } else {
+            const trimmed = token.strongs.trim();
+            if (trimmed) strongsNumbers.add(trimmed);
           }
         }
       });
@@ -317,7 +336,7 @@ export function BibleReader({
       return;
     }
 
-    let clickedIndex = strongsList.indexOf(strongNumber);
+    let clickedIndex = strongsList.indexOf(normalizedStrong);
     if (clickedIndex < 0) {
       clickedIndex = 0;
     }
@@ -350,14 +369,14 @@ export function BibleReader({
             </p>
           </div>
 
-          {/* Search bar (placeholder for now) */}
+          {/* Sleek search bar (future: book/verse + word/Strong’s search) */}
           <div className="w-full max-w-xs md:max-w-sm">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 h-4 w-4 pointer-events-none" />
               <input
                 type="text"
                 className="w-full rounded-full border border-border bg-background/80 px-9 py-1.5 text-sm shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                placeholder="Matt 5:4 (coming soon)…"
+                placeholder="Matt 5:4 or search (coming soon)…"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -365,21 +384,13 @@ export function BibleReader({
           </div>
         </div>
 
-        {/* Strong’s inline definition under header, with Hide button */}
+        {/* Strong’s inline definition under header */}
         {hasSelectedStrong && selectedStrong && (
-          <div className="pt-2 space-y-1">
+          <div className="pt-2 space-y-2">
             <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-muted-foreground">
-              <span>
-                Strong&apos;s for {selectedStrong.verseReference}
-              </span>
-              <button
-                type="button"
-                className="text-[11px] font-medium text-primary hover:underline"
-                onClick={() => setSelectedStrong(null)}
-              >
-                Hide Strong&apos;s
-              </button>
+              <span>Strong&apos;s for {selectedStrong.verseReference}</span>
             </div>
+
             <StrongDefinitionInline
               strongsNumbers={selectedStrong.strongsNumbers}
               activeIndex={selectedStrong.activeIndex}
@@ -390,6 +401,18 @@ export function BibleReader({
                 })
               }
             />
+
+            {/* ⬇️ Arrow to close Strong’s panel */}
+            <div className="flex justify-center pt-1">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors"
+                onClick={() => setSelectedStrong(null)}
+              >
+                <ChevronDown className="h-3 w-3" />
+                <span>Close Strong&apos;s</span>
+              </button>
+            </div>
           </div>
         )}
       </div>
