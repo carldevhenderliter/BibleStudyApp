@@ -1,77 +1,71 @@
 import { useMemo } from "react";
-import { getStrongsDefinition } from "@/lib/strongsData";
-
-// Be flexible about the shape coming back from your JSON
-export type StrongDefinitionShape = {
-  number?: string;
-  lemma?: string;
-  transliteration?: string;
-  pronunciation?: string;
-  partOfSpeech?: string;
-  // some JSONs use `definition`, some `strongs_def`
-  definition?: string;
-  strongs_def?: string;
-  // some use `usage`, some `kjv_def`
-  usage?: string;
-  kjv_def?: string;
-  derivation?: string;
-};
+import { getStrongsDefinition, StrongsDefinition } from "@/lib/strongsData";
 
 interface StrongDefinitionInlineProps {
   strongsNumbers: string[];
-  activeIndex: number;
-  onActiveIndexChange?: (index: number) => void; // kept for future use
+  activeIndex: number;                  // kept to match BibleReader
+  onActiveIndexChange?: (index: number) => void; // unused now but safe to keep
 }
 
 export function StrongDefinitionInline({
   strongsNumbers,
   activeIndex,
 }: StrongDefinitionInlineProps) {
-  // Safely pick a Strong’s number
+  // Safely pick the active Strong's number
   const strongNumber = strongsNumbers[activeIndex] ?? strongsNumbers[0];
 
-  const definition = useMemo<StrongDefinitionShape | null>(() => {
+  const def = useMemo(() => {
     if (!strongNumber) return null;
     try {
-      const def = getStrongsDefinition(strongNumber);
-      if (!def) return null;
-      return def as StrongDefinitionShape;
+      return getStrongsDefinition(strongNumber);
     } catch (err) {
-      console.error("Error loading Strong's definition for", strongNumber, err);
+      console.error("Error getting Strong's definition for", strongNumber, err);
       return null;
     }
   }, [strongNumber]);
 
-  // If we have no number or no definition, render nothing (but don’t crash)
-  if (!strongNumber || !definition) {
+  // If we still don't have a valid definition, render nothing
+  if (!strongNumber || !def || typeof def !== "object") {
     return null;
   }
 
-  const {
-    number,
-    lemma,
-    transliteration,
-    pronunciation,
-    partOfSpeech,
-    definition: gloss1,
-    strongs_def: gloss2,
-    usage,
-    kjv_def,
-    derivation,
-  } = definition;
+  // Make this tolerant of both:
+  // - normalized StrongsDefinition
+  // - raw JSON with fields: strongs_def, kjv_def, translit, lemma, etc.
+  const d = def as StrongsDefinition & {
+    lemma?: string;
+    translit?: string;
+    strongs_def?: string;
+    kjv_def?: string;
+    derivation?: string;
+    pronunciation?: string;
+    partOfSpeech?: string;
+    pos?: string;
+  };
 
-  const gloss = gloss1 ?? gloss2;
-  const usageText = usage ?? kjv_def;
+  const number =
+    (d as any).number ?? strongNumber;
+  const lemma = d.lemma;
+  const transliteration =
+    (d as any).transliteration ?? d.translit;
+  const pronunciation = (d as any).pronunciation;
+  const partOfSpeech =
+    (d as any).partOfSpeech ?? d.pos;
+  const gloss =
+    (d as any).definition ?? d.strongs_def;
+  const usage =
+    (d as any).usage ?? d.kjv_def;
+  const derivation = d.derivation;
 
   return (
     <div className="mt-3 rounded-lg border bg-muted/40 px-4 py-3 text-sm shadow-sm">
       <div className="flex flex-wrap items-baseline gap-2">
         {/* Strong's number */}
         <span className="font-mono text-xs font-semibold text-primary">
-          {number || strongNumber}
+          {number}
         </span>
 
-        {/* Lemma (Greek/Hebrew script) */}
+        {/* Lemma (Greek/Hebrew) */}
         {lemma && (
           <span className="text-base font-semibold font-serif">
             {lemma}
@@ -116,10 +110,10 @@ export function StrongDefinitionInline({
         </p>
       )}
 
-      {/* Usage / KJV gloss list */}
-      {usageText && (
-        <p className="mt-1 text-xs text-muted-foreground leading-snug whitespace-pre-line">
-          {usageText}
+      {/* KJV usage / gloss list */}
+      {usage && (
+        <p className="mt-1 text-xs text-muted-foreground leading-snug">
+          {usage}
         </p>
       )}
     </div>
