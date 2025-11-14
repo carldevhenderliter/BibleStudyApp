@@ -11,7 +11,7 @@ import {
   Translation,
 } from "@/lib/bibleData";
 import { useToast } from "@/hooks/use-toast";
-import { Search } from "lucide-react"; // 🔍 NEW
+import { Search } from "lucide-react";
 
 interface BibleReaderProps {
   book: string;
@@ -68,10 +68,12 @@ export function BibleReader({
     verseId: string;
     text: string;
   } | null>(null);
-  const [selectedStrong, setSelectedStrong] = useState<SelectedStrong | null>(null);
+  const [selectedStrong, setSelectedStrong] = useState<SelectedStrong | null>(
+    null
+  );
 
-  const [searchQuery, setSearchQuery] = useState(""); // 🔍 NEW
-  const hasSelectedStrong = !!selectedStrong; // 🔍 NEW
+  const [searchQuery, setSearchQuery] = useState(""); // placeholder for future: "Matthew 5:4"
+  const hasSelectedStrong = !!selectedStrong;
 
   const { toast } = useToast();
 
@@ -295,8 +297,10 @@ export function BibleReader({
       verse.tokens.forEach((token) => {
         if (token.strongs) {
           if (Array.isArray(token.strongs)) {
-            token.strongs.forEach((num) => num && strongsNumbers.add(num.trim()));
-          } else {
+            token.strongs.forEach((num) => {
+              if (num && num.trim()) strongsNumbers.add(num.trim());
+            });
+          } else if (token.strongs.trim()) {
             strongsNumbers.add(token.strongs.trim());
           }
         }
@@ -304,10 +308,19 @@ export function BibleReader({
     }
 
     const strongsList = Array.from(strongsNumbers);
-    if (strongsList.length === 0) return;
+    if (strongsList.length === 0) {
+      toast({
+        title: "No Strong's numbers",
+        description: `No Strong's data found for this verse.`,
+        variant: "default",
+      });
+      return;
+    }
 
     let clickedIndex = strongsList.indexOf(strongNumber);
-    if (clickedIndex < 0) clickedIndex = 0;
+    if (clickedIndex < 0) {
+      clickedIndex = 0;
+    }
 
     setSelectedStrong({
       verseId,
@@ -325,8 +338,9 @@ export function BibleReader({
           hasSelectedStrong ? "py-4 space-y-3" : "py-3 space-y-2"
         }`}
       >
-        {/* Title + Search bar */}
+        {/* Title + Search row */}
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          {/* Title */}
           <div>
             <h1 className="text-2xl md:text-3xl font-serif font-semibold">
               {book} {chapter}
@@ -336,14 +350,14 @@ export function BibleReader({
             </p>
           </div>
 
-          {/* Sleek rounded Search */}
+          {/* Search bar (placeholder for now) */}
           <div className="w-full max-w-xs md:max-w-sm">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 h-4 w-4 pointer-events-none" />
               <input
                 type="text"
                 className="w-full rounded-full border border-border bg-background/80 px-9 py-1.5 text-sm shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                placeholder="Search (coming soon)…"
+                placeholder="Matt 5:4 (coming soon)…"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -351,9 +365,21 @@ export function BibleReader({
           </div>
         </div>
 
-        {/* Strong’s inline definition under header */}
+        {/* Strong’s inline definition under header, with Hide button */}
         {hasSelectedStrong && selectedStrong && (
-          <div className="pt-2">
+          <div className="pt-2 space-y-1">
+            <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-muted-foreground">
+              <span>
+                Strong&apos;s for {selectedStrong.verseReference}
+              </span>
+              <button
+                type="button"
+                className="text-[11px] font-medium text-primary hover:underline"
+                onClick={() => setSelectedStrong(null)}
+              >
+                Hide Strong&apos;s
+              </button>
+            </div>
             <StrongDefinitionInline
               strongsNumbers={selectedStrong.strongsNumbers}
               activeIndex={selectedStrong.activeIndex}
@@ -370,7 +396,10 @@ export function BibleReader({
 
       {/* MAIN SCROLL AREA */}
       <ScrollArea className="flex-1">
-        <div className="max-w-3xl mx-auto px-6 py-8" style={{ fontSize }}>
+        <div
+          className="max-w-3xl mx-auto px-6 py-8"
+          style={{ fontSize: `${fontSize}px` }}
+        >
           {verses.map((verse) => {
             const verseNotes = notes.filter(
               (n) => n.verseId === verse.id && n.wordIndex === undefined
@@ -385,7 +414,8 @@ export function BibleReader({
               (h) => h.verseId === verse.id && h.wordIndex !== undefined
             );
             const verseWithTokens = verse as BibleVerseWithTokens;
-            const hasTokens = verseWithTokens.tokens?.length;
+            const hasTokens =
+              verseWithTokens.tokens && verseWithTokens.tokens.length > 0;
             const showWordByWord =
               (showStrongsNumbers || showInterlinear) && hasTokens;
 
@@ -431,7 +461,7 @@ export function BibleReader({
                   }
                 />
 
-                {/* Notes */}
+                {/* Verse-level notes */}
                 {showNotes &&
                   verseNotes.map((note) => (
                     <NoteEditor
@@ -445,7 +475,7 @@ export function BibleReader({
                     />
                   ))}
 
-                {/* Word notes */}
+                {/* Word-level notes */}
                 {showNotes &&
                   wordNotes.map((note) => (
                     <NoteEditor
@@ -460,7 +490,7 @@ export function BibleReader({
                     />
                   ))}
 
-                {/* Adding new note */}
+                {/* Active Note Editor */}
                 {addingNote?.verseId === verse.id && (
                   <NoteEditor
                     note={
