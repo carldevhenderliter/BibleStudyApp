@@ -1,60 +1,96 @@
 import { useMemo } from "react";
 import { getStrongsDefinition, StrongsDefinition } from "@/lib/strongsData";
-import { BookOpen } from "lucide-react";
 
 interface StrongDefinitionInlineProps {
-  strongNumber: string;
+  strongsNumbers: string[];
+  activeIndex: number;                  // we still accept this to match BibleReader
+  onActiveIndexChange?: (index: number) => void; // kept optional for future use
 }
 
 export function StrongDefinitionInline({
-  strongNumber,
+  strongsNumbers,
+  activeIndex,
 }: StrongDefinitionInlineProps) {
-  const definition = useMemo<StrongsDefinition | null>(
-    () => getStrongsDefinition(strongNumber),
-    [strongNumber]
-  );
+  // We expect only one Strong's, but this keeps it safe
+  const strongNumber = strongsNumbers[activeIndex] ?? strongsNumbers[0];
 
-  if (!definition) {
-    return (
-      <div className="border-l-4 border-muted pl-3 py-2 text-sm text-muted-foreground">
-        No Strong&apos;s definition found for {strongNumber}.
-      </div>
-    );
+  const definition = useMemo<StrongsDefinition | null>(() => {
+    if (!strongNumber) return null;
+    return getStrongsDefinition(strongNumber);
+  }, [strongNumber]);
+
+  if (!strongNumber || !definition) {
+    return null;
   }
 
+  const {
+    number,
+    lemma,
+    transliteration,
+    pronunciation,
+    partOfSpeech,
+    definition: gloss,
+    usage,
+    derivation,
+  } = definition as any;
+
   return (
-    <div className="border-l-4 border-primary/40 bg-primary/5 rounded-r-md pl-3 pr-3 py-2 text-sm space-y-1">
-      <div className="flex items-baseline gap-2 flex-wrap">
-        <BookOpen className="h-4 w-4 text-primary" />
-        <span className="text-sm font-mono text-primary font-semibold">
-          {definition.number}
+    <div className="mt-3 rounded-lg border bg-muted/40 px-4 py-3 text-sm shadow-sm">
+      <div className="flex flex-wrap items-baseline gap-2">
+        {/* Strong's number */}
+        <span className="font-mono text-xs font-semibold text-primary">
+          {number || strongNumber}
         </span>
-        {definition.lemma && (
-          <span className="text-sm font-semibold">{definition.lemma}</span>
+
+        {/* Lemma (Greek/Hebrew script) */}
+        {lemma && (
+          <span className="text-base font-semibold font-serif">
+            {lemma}
+          </span>
         )}
-        {definition.transliteration && (
-          <span className="text-sm text-muted-foreground">
-            {definition.transliteration}
+
+        {/* Transliteration */}
+        {transliteration && (
+          <span className="text-sm font-medium text-foreground/90">
+            {transliteration}
+          </span>
+        )}
+
+        {/* Pronunciation */}
+        {pronunciation && (
+          <span className="text-xs italic text-muted-foreground">
+            ({pronunciation})
+          </span>
+        )}
+
+        {/* Part of speech */}
+        {partOfSpeech && (
+          <span className="rounded bg-background px-2 py-0.5 text-xs text-muted-foreground">
+            {partOfSpeech}
           </span>
         )}
       </div>
 
-      {definition.partOfSpeech && (
-        <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-          {definition.partOfSpeech}
-        </div>
-      )}
-
-      {definition.definition && (
-        <p className="text-sm leading-snug">
-          <span className="font-semibold">Definition: </span>
-          {definition.definition}
+      {/* Derivation (if present) */}
+      {derivation && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          <span className="font-semibold">From: </span>
+          {derivation}
         </p>
       )}
 
-      {definition.usage && (
-        <p className="text-xs text-muted-foreground leading-snug">
-          {definition.usage}
+      {/* Main definition */}
+      {gloss && (
+        <p className="mt-2 text-sm leading-snug">
+          <span className="font-semibold">Definition: </span>
+          {gloss}
+        </p>
+      )}
+
+      {/* KJV usage / gloss list */}
+      {usage && (
+        <p className="mt-1 text-xs text-muted-foreground leading-snug">
+          {usage}
         </p>
       )}
     </div>
