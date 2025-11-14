@@ -288,25 +288,30 @@ export function BibleReader({
   };
 
   const handleStrongClick = (verseId: string, strongNumber: string) => {
-    const normalizedStrong = strongNumber.trim();
+  // 🧷 If you click the same Strong's on the same verse, toggle it off
+  if (
+    selectedStrong &&
+    selectedStrong.verseId === verseId &&
+    selectedStrong.strongsNumbers.length === 1 &&
+    selectedStrong.strongsNumbers[0] === strongNumber
+  ) {
+    setSelectedStrong(null);
+    return;
+  }
 
-    // 🔁 If same Strong’s on same verse is clicked again → toggle off
-    if (selectedStrong && selectedStrong.strongNumber === normalizedStrong) {
-      setSelectedStrong(null);
-      return;
-    }
+  const verse = verses.find(
+    (v) => v.id === verseId
+  ) as BibleVerseWithTokens | undefined;
+  if (!verse) return;
 
-    const verse = verses.find(
-      (v) => v.id === verseId
-    ) as BibleVerseWithTokens | undefined;
-    if (!verse) return;
-
-    // We don't gather all strongs anymore — just use the one clicked
-    setSelectedStrong({
-      strongNumber: normalizedStrong,
-      verseReference: `${verse.book} ${verse.chapter}:${verse.verse}`,
-    });
-  };
+  // ✅ Only keep the one Strong's number that was actually clicked
+  setSelectedStrong({
+    verseId,
+    strongsNumbers: [strongNumber],
+    activeIndex: 0,
+    verseReference: `${verse.book} ${verse.chapter}:${verse.verse}`,
+  });
+};
 
   const activeStrongNumber = selectedStrong?.strongNumber ?? null;
 
