@@ -361,37 +361,39 @@ export function BibleReader({
 
       // Scan all NT books/chapters for this Strong’s
       for (const entry of NT_BOOK_CHAPTERS) {
-        for (let ch = 1; ch <= entry.chapters; ch++) {
-          const chapterVerses = await getVersesByChapter(
-            entry.book,
-            ch,
-            selectedTranslation
-          );
-          const asTokens = chapterVerses as BibleVerseWithTokens[];
+  for (let ch = 1; ch <= entry.chapters; ch++) {
+    const chapterVerses = await getVersesByChapter(
+      entry.book,
+      ch,
+      selectedTranslation
+    );
+    const asTokens = chapterVerses as BibleVerseWithTokens[];
 
-          for (const v of asTokens) {
-            const tokens = v.tokens || [];
-            tokens.forEach((token) => {
-              if (!token.strongs) return;
-              const strongsArray = Array.isArray(token.strongs)
-                ? token.strongs
-                : [token.strongs];
+    for (const v of asTokens) {
+      const tokens = v.tokens || [];
+      tokens.forEach((token) => {
+        if (!token.strongs) return;
+        const strongsArray = Array.isArray(token.strongs)
+          ? token.strongs
+          : [token.strongs];
 
-              if (
-                strongsArray.some(
-                  (s) => s.toUpperCase().trim() === normalized
-                )
-              ) {
-                allOccurrences.push({
-                  verseId: v.id,
-                  reference: `${v.book} ${v.chapter}:${v.verse}`,
-                  english: token.english,
-                  original: token.original,
-                });
-              }
-            });
-          }
+        if (
+          strongsArray.some(
+            (s) => s.toUpperCase().trim() === normalized
+          )
+        ) {
+          allOccurrences.push({
+            verseId: v.id,
+            reference: `${v.book} ${v.chapter}:${v.verse}`,
+            english: token.english,
+            original: token.original,
+          });
         }
+      });
+    }
+  }
+}
+
       }
 
       // Only update if this Strong is still the one selected
