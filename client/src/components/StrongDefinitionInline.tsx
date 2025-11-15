@@ -1,21 +1,23 @@
 import { useMemo } from "react";
 import { getStrongsDefinition, StrongsDefinition } from "@/lib/strongsData";
 
-type StrongOccurrence = {
+export type StrongOccurrence = {
   verseId: string;
   reference: string;   // "John 1:1"
-  english: string;     // English word in that verse
-  original?: string;   // Greek/Hebrew if present
+  english: string;     // English token
+  original?: string;   // Greek/Hebrew
 };
 
 interface StrongDefinitionInlineProps {
   strongNumber: string;
   occurrences?: StrongOccurrence[];
+  isLoadingOccurrences?: boolean;
 }
 
 export function StrongDefinitionInline({
   strongNumber,
   occurrences = [],
+  isLoadingOccurrences = false,
 }: StrongDefinitionInlineProps) {
   const definition = useMemo<StrongsDefinition | null>(() => {
     if (!strongNumber) return null;
@@ -96,11 +98,32 @@ export function StrongDefinitionInline({
       )}
 
       {/* 🔁 All occurrences in the New Testament */}
-      {occurrences.length > 0 && (
-        <div className="mt-3 border-t pt-2">
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Occurrences in the New Testament ({occurrences.length})
-          </div>
+      <div className="mt-3 border-t pt-2">
+        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground flex items-center justify-between">
+          <span>
+            Occurrences in the New Testament
+            {occurrences.length > 0 && ` (${occurrences.length})`}
+          </span>
+          {isLoadingOccurrences && (
+            <span className="text-[10px] italic">
+              Scanning…
+            </span>
+          )}
+        </div>
+
+        {isLoadingOccurrences && occurrences.length === 0 && (
+          <p className="text-[11px] text-muted-foreground italic">
+            Scanning the New Testament for this Strong&apos;s number…
+          </p>
+        )}
+
+        {!isLoadingOccurrences && occurrences.length === 0 && (
+          <p className="text-[11px] text-muted-foreground italic">
+            No occurrences found in the New Testament.
+          </p>
+        )}
+
+        {!isLoadingOccurrences && occurrences.length > 0 && (
           <div className="max-h-52 overflow-y-auto pr-1 space-y-1 text-xs">
             {occurrences.map((occ, idx) => (
               <div
@@ -121,8 +144,8 @@ export function StrongDefinitionInline({
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
