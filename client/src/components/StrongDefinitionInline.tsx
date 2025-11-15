@@ -1,25 +1,30 @@
-// src/components/StrongDefinitionInline.tsx
 import { useMemo } from "react";
 import { getStrongsDefinition, StrongsDefinition } from "@/lib/strongsData";
 
+type StrongOccurrence = {
+  verseId: string;
+  reference: string;   // "John 1:1"
+  english: string;     // English word in that verse
+  original?: string;   // Greek/Hebrew if present
+};
+
 interface StrongDefinitionInlineProps {
-  strongNumber: string; // e.g. "G3056"
+  strongNumber: string;
+  occurrences?: StrongOccurrence[];
 }
 
 export function StrongDefinitionInline({
   strongNumber,
+  occurrences = [],
 }: StrongDefinitionInlineProps) {
-  const def = useMemo<StrongsDefinition | null>(() => {
+  const definition = useMemo<StrongsDefinition | null>(() => {
     if (!strongNumber) return null;
-    try {
-      return getStrongsDefinition(strongNumber);
-    } catch (err) {
-      console.error("Error getting Strong's definition for", strongNumber, err);
-      return null;
-    }
+    return getStrongsDefinition(strongNumber);
   }, [strongNumber]);
 
-  if (!def) return null;
+  if (!strongNumber || !definition) {
+    return null;
+  }
 
   const {
     number,
@@ -27,41 +32,39 @@ export function StrongDefinitionInline({
     transliteration,
     pronunciation,
     partOfSpeech,
-    definition,
+    definition: gloss,
     usage,
     derivation,
-  } = def;
+  } = definition as any;
+
+  const displayNumber = number || strongNumber;
 
   return (
-    <div className="mt-1 rounded-lg border bg-muted/40 px-4 py-3 text-sm shadow-sm">
+    <div className="mt-3 rounded-lg border bg-muted/40 px-4 py-3 text-sm shadow-sm">
+      {/* Definition header */}
       <div className="flex flex-wrap items-baseline gap-2">
-        {/* Strong's number */}
         <span className="font-mono text-xs font-semibold text-primary">
-          {number || strongNumber}
+          {displayNumber}
         </span>
 
-        {/* Lemma (Greek/Hebrew script) */}
         {lemma && (
           <span className="text-base font-semibold font-serif">
             {lemma}
           </span>
         )}
 
-        {/* Transliteration */}
         {transliteration && (
           <span className="text-sm font-medium text-foreground/90">
             {transliteration}
           </span>
         )}
 
-        {/* Pronunciation */}
         {pronunciation && (
           <span className="text-xs italic text-muted-foreground">
             ({pronunciation})
           </span>
         )}
 
-        {/* Part of speech */}
         {partOfSpeech && (
           <span className="rounded bg-background px-2 py-0.5 text-xs text-muted-foreground">
             {partOfSpeech}
@@ -78,18 +81,47 @@ export function StrongDefinitionInline({
       )}
 
       {/* Main definition */}
-      {definition && (
+      {gloss && (
         <p className="mt-2 text-sm leading-snug">
           <span className="font-semibold">Definition: </span>
-          {definition}
+          {gloss}
         </p>
       )}
 
-      {/* KJV usage / gloss list */}
+      {/* Usage */}
       {usage && (
         <p className="mt-1 text-xs text-muted-foreground leading-snug">
           {usage}
         </p>
+      )}
+
+      {/* 🔁 All occurrences in the New Testament */}
+      {occurrences.length > 0 && (
+        <div className="mt-3 border-t pt-2">
+          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Occurrences in the New Testament ({occurrences.length})
+          </div>
+          <div className="max-h-52 overflow-y-auto pr-1 space-y-1 text-xs">
+            {occurrences.map((occ, idx) => (
+              <div
+                key={`${occ.verseId}-${idx}`}
+                className="flex flex-col sm:flex-row sm:items-baseline sm:gap-2"
+              >
+                <span className="font-mono text-[11px] text-primary/80 min-w-[80px]">
+                  {occ.reference}
+                </span>
+                <span className="text-xs">
+                  <span className="font-semibold">{occ.english}</span>
+                  {occ.original && (
+                    <span className="ml-1 italic text-muted-foreground">
+                      ({occ.original})
+                    </span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
