@@ -488,17 +488,6 @@ export function BibleReader({
 
   return (
     <div className="h-full flex flex-col relative">
-      {/* SETTINGS TOGGLE BUTTON (just toggles state for now) */}
-      <button
-        onClick={() => setShowSettings(prev => !prev)}
-        className="absolute top-3 right-3 z-50
-               bg-primary text-primary-foreground px-3 py-1.5 rounded-lg
-               shadow hover:bg-primary/80 transition-colors flex items-center gap-1"
-      >
-        <Settings2 className="h-4 w-4" />
-        Settings
-      </button>
-
       {/* HEADER */}
       <div
         className={`border-b px-6 transition-all ${
