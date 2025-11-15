@@ -11,10 +11,7 @@ import {
   Translation,
 } from "@/lib/bibleData";
 import { useToast } from "@/hooks/use-toast";
-import { Search, ChevronDown } from "lucide-react";
-import { Settings2 } from "lucide-react";
-const [showSettings, setShowSettings] = useState(false);
-
+import { Search, ChevronDown, Settings2 } from "lucide-react";
 
 interface BibleReaderProps {
   book: string;
@@ -102,6 +99,9 @@ export function BibleReader({
   displayMode,
   selectedTranslation,
 }: BibleReaderProps) {
+  // 👇 this is where showSettings belongs
+  const [showSettings, setShowSettings] = useState(false);
+
   const [verses, setVerses] = useState<BibleVerseWithTokens[]>([]);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -487,17 +487,18 @@ export function BibleReader({
   };
 
   return (
-    <div className="h-full flex flex-col">
-      {/* SETTINGS TOGGLE BUTTON */}
-<button
-  onClick={() => setShowSettings(prev => !prev)}
-  className="absolute top-3 right-3 z-50
-             bg-primary text-primary-foreground px-3 py-1.5 rounded-lg
-             shadow hover:bg-primary/80 transition-colors flex items-center gap-1"
->
-  <Settings2 className="h-4 w-4" />
-  Settings
-</button>
+    <div className="h-full flex flex-col relative">
+      {/* SETTINGS TOGGLE BUTTON (just toggles state for now) */}
+      <button
+        onClick={() => setShowSettings(prev => !prev)}
+        className="absolute top-3 right-3 z-50
+               bg-primary text-primary-foreground px-3 py-1.5 rounded-lg
+               shadow hover:bg-primary/80 transition-colors flex items-center gap-1"
+      >
+        <Settings2 className="h-4 w-4" />
+        Settings
+      </button>
+
       {/* HEADER */}
       <div
         className={`border-b px-6 transition-all ${
