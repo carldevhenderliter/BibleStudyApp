@@ -75,8 +75,7 @@ export function NoteEditor({
       onSave(trimmed);
     }
 
-    // ✅ After a successful save, close the editor
-    onCancel();
+   
   };
 
   const disableScopeControls = !enableRange;
