@@ -1,4 +1,3 @@
-// src/components/BibleReader.tsx
 import { useState, useEffect } from "react";
 import { BibleVerse, Highlight, Note } from "@shared/schema";
 import { VerseDisplay } from "./VerseDisplay";
@@ -42,10 +41,50 @@ type AddingNote = {
   wordText?: string;
 };
 
-type SelectedStrong = {
-  strongNumber: string;      // Single Strong’s number, e.g. "G3056"
-  verseReference: string;    // e.g. "John 1:1"
+type StrongOccurrence = {
+  verseId: string;
+  reference: string;   // "John 1:1"
+  english: string;     // the English word/token
+  original?: string;   // Greek/Hebrew text if present
 };
+
+type SelectedStrong = {
+  strongNumber: string;          // e.g. "G3056"
+  verseReference: string;        // where you clicked it, e.g. "John 1:1"
+  occurrences: StrongOccurrence[]; // all occurrences in the NT
+};
+
+// 🔢 New Testament books + chapter counts
+// ⚠️ If your book names differ, adjust them to match your data
+const NT_BOOK_CHAPTERS: { book: string; chapters: number }[] = [
+  { book: "Matthew", chapters: 28 },
+  { book: "Mark", chapters: 16 },
+  { book: "Luke", chapters: 24 },
+  { book: "John", chapters: 21 },
+  { book: "Acts", chapters: 28 },
+  { book: "Romans", chapters: 16 },
+  { book: "1 Corinthians", chapters: 16 },
+  { book: "2 Corinthians", chapters: 13 },
+  { book: "Galatians", chapters: 6 },
+  { book: "Ephesians", chapters: 6 },
+  { book: "Philippians", chapters: 4 },
+  { book: "Colossians", chapters: 4 },
+  { book: "1 Thessalonians", chapters: 5 },
+  { book: "2 Thessalonians", chapters: 3 },
+  { book: "1 Timothy", chapters: 6 },
+  { book: "2 Timothy", chapters: 4 },
+  { book: "Titus", chapters: 3 },
+  { book: "Philemon", chapters: 1 },
+  { book: "Hebrews", chapters: 13 },
+  { book: "James", chapters: 5 },
+  { book: "1 Peter", chapters: 5 },
+  { book: "2 Peter", chapters: 3 },
+  { book: "1 John", chapters: 5 },
+  { book: "2 John", chapters: 1 },
+  { book: "3 John", chapters: 1 },
+  { book: "Jude", chapters: 1 },
+  { book: "Revelation", chapters: 22 },
+];
 
 export function BibleReader({
   book,
@@ -72,12 +111,16 @@ export function BibleReader({
   );
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Cache all NT verses for the current translation so we don't reload every click
+  const [ntVersesCache, setNtVersesCache] = useState<BibleVerseWithTokens[] | null>(null);
+  const [ntCacheTranslation, setNtCacheTranslation] = useState<Translation | null>(null);
+  const [isLoadingNt, setIsLoadingNt] = useState(false);
+
   const hasSelectedStrong = !!selectedStrong;
   const activeStrongNumber = selectedStrong?.strongNumber ?? null;
-
   const { toast } = useToast();
 
-  // Load verses + saved highlights/notes
+  // Load current chapter + saved highlights/notes
   useEffect(() => {
     let cancelled = false;
 
@@ -290,27 +333,99 @@ export function BibleReader({
     }
   };
 
-  const handleStrongClick = (verseId: string, strongNumber: string) => {
-    // If you click the same Strong’s again, collapse it
-    if (selectedStrong && selectedStrong.strongNumber === strongNumber) {
+  // 🔍 Load all NT verses for the current translation (cached in state)
+  const loadNewTestamentVerses = async (): Promise<BibleVerseWithTokens[]> => {
+    if (ntVersesCache && ntCacheTranslation === selectedTranslation) {
+      return ntVersesCache;
+    }
+
+    setIsLoadingNt(true);
+    toast({
+      title: "Loading Strong's occurrences",
+      description: "Scanning the New Testament for this Strong's number…",
+    });
+
+    const all: BibleVerseWithTokens[] = [];
+
+    for (const entry of NT_BOOK_CHAPTERS) {
+      for (let ch = 1; ch <= entry.chapters; ch++) {
+        const chapterVerses = await getVersesByChapter(
+          entry.book,
+          ch,
+          selectedTranslation
+        );
+        all.push(...(chapterVerses as BibleVerseWithTokens[]));
+      }
+    }
+
+    setNtVersesCache(all);
+    setNtCacheTranslation(selectedTranslation);
+    setIsLoadingNt(false);
+    return all;
+  };
+
+  const handleStrongClick = async (verseId: string, strongNumber: string) => {
+    const normalized = strongNumber.toUpperCase().trim();
+
+    // 🔁 If same Strong’s already selected, toggle it off
+    if (selectedStrong?.strongNumber === normalized) {
       setSelectedStrong(null);
       return;
     }
 
-    const verse = verses.find(
+    const clickedVerse = verses.find(
       (v) => v.id === verseId
     ) as BibleVerseWithTokens | undefined;
-    if (!verse) return;
+    if (!clickedVerse) return;
+
+    // 🔽 Make sure we have all NT verses for this translation
+    const allNtVerses = await loadNewTestamentVerses();
+
+    // 🔎 Collect ALL occurrences of this Strong’s in the New Testament
+    const occurrences: StrongOccurrence[] = [];
+    for (const v of allNtVerses) {
+      const vTokens = (v as BibleVerseWithTokens).tokens || [];
+      vTokens.forEach((token) => {
+        if (!token.strongs) return;
+        const strongsArray = Array.isArray(token.strongs)
+          ? token.strongs
+          : [token.strongs];
+
+        if (
+          strongsArray.some(
+            (s) => s.toUpperCase().trim() === normalized
+          )
+        ) {
+          occurrences.push({
+            verseId: v.id,
+            reference: `${v.book} ${v.chapter}:${v.verse}`,
+            english: token.english,
+            original: token.original,
+          });
+        }
+      });
+    }
+
+    if (occurrences.length === 0) {
+      toast({
+        title: "No occurrences found",
+        description: `No tokens with Strong's ${normalized} in the New Testament.`,
+        variant: "default",
+      });
+      setSelectedStrong(null);
+      return;
+    }
 
     setSelectedStrong({
-      strongNumber,
-      verseReference: `${verse.book} ${verse.chapter}:${verse.verse}`,
+      strongNumber: normalized,
+      verseReference: `${clickedVerse.book} ${clickedVerse.chapter}:${clickedVerse.verse}`,
+      occurrences,
     });
   };
 
   return (
     <div className="h-full flex flex-col">
-      {/* HEADER / TITLE / SEARCH / STRONG’S PANEL */}
+      {/* HEADER */}
       <div
         className={`border-b px-6 transition-all ${
           hasSelectedStrong ? "py-4 space-y-3" : "py-3 space-y-2"
@@ -327,7 +442,7 @@ export function BibleReader({
             </p>
           </div>
 
-          {/* Sleek search bar (future: reference + word/Strong’s search) */}
+          {/* Sleek search bar (future: book/verse + word/Strong’s search) */}
           <div className="w-full max-w-xs md:max-w-sm">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 h-4 w-4 pointer-events-none" />
@@ -350,11 +465,19 @@ export function BibleReader({
                 Strong&apos;s {selectedStrong.strongNumber} ·{" "}
                 {selectedStrong.verseReference}
               </span>
+              {isLoadingNt && (
+                <span className="text-[10px] italic">
+                  Scanning New Testament…
+                </span>
+              )}
             </div>
 
-            <StrongDefinitionInline strongNumber={selectedStrong.strongNumber} />
+            <StrongDefinitionInline
+              strongNumber={selectedStrong.strongNumber}
+              occurrences={selectedStrong.occurrences}
+            />
 
-            {/* Arrow button to close Strong’s panel */}
+            {/* ⬇️ Arrow button to close Strong’s panel */}
             <div className="flex justify-center pt-1">
               <button
                 type="button"
@@ -434,6 +557,7 @@ export function BibleReader({
                         }
                       : null
                   }
+                  // 🔥 used by VerseDisplay to highlight all occurrences in THIS chapter
                   activeStrongNumber={activeStrongNumber || undefined}
                 />
 
