@@ -14,7 +14,10 @@ interface NoteEditorProps {
    * For word notes we pass false so it only applies to that single verse.
    */
   enableRange?: boolean;
-  onSave: (content: string, range?: { startVerse: number; endVerse: number }) => void;
+  onSave: (
+    content: string,
+    range?: { startVerse: number; endVerse: number }
+  ) => void;
   onDelete?: () => void;
   onCancel: () => void;
 }
@@ -71,6 +74,9 @@ export function NoteEditor({
     } else {
       onSave(trimmed);
     }
+
+    // ✅ After a successful save, close the editor
+    onCancel();
   };
 
   const disableScopeControls = !enableRange;
