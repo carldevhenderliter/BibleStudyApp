@@ -279,9 +279,10 @@ export function VerseDisplay({
   // VERSE MODE
   return (
     <div
-      className="group relative py-3"
-      onMouseEnter={() => setShowAddButton(true)}
-      onMouseLeave={() => setShowAddButton(false)}
+      className="group relative py-3 scroll-mt-24"
+    data-verse-id={verse.id}
+    onMouseEnter={() => setShowAddButton(true)}
+    onMouseLeave={() => setShowAddButton(false)}
     >
       <div className="flex gap-4">
         <div className="text-sm text-muted-foreground font-mono w-8 flex-shrink-0 text-right pt-1">
