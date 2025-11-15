@@ -533,7 +533,7 @@ export function BibleReader({
             </div>
 
             {/* Selected verse with highlighted word */}
-            <div className="rounded-lg bg-background/90 border px-3 py-2 md:px-4 md:py-3 shadow-sm">
+            <div className="rounded-xl bg-background/95 border px-4 py-3 md:px-5 md:py-4 shadow-sm">
               <div className="text-[11px] md:text-xs font-mono text-primary/80 mb-1">
                 {selectedStrong.verseReference}
               </div>
@@ -568,7 +568,7 @@ export function BibleReader({
               </div>
 
               {showOccurrences && (
-                <div className="max-h-[55vh] overflow-y-auto space-y-1.5 pr-1 border-t border-border/60 pt-2">
+                <div className="max-h-[58vh] overflow-y-auto space-y-2 pr-1 border-t border-border/70 pt-3 pb-2">
                   {isScanningOccurrences && (
                     <p className="text-[11px] md:text-xs text-muted-foreground">
                       Scanning New Testament for Strong&apos;s{" "}
@@ -580,15 +580,15 @@ export function BibleReader({
                     strongOccurrences.length > 0 &&
                     strongOccurrences.map((occ) => (
                       <button
-                        key={`${occ.verseId}-${occ.matchText}`}
+                        key={`${occ.verseId}-${occ.matchText}-${occ.reference}`}
                         type="button"
                         onClick={() => handleJumpToOccurrence(occ)}
-                        className="w-full text-left rounded-md px-2 py-2 hover:bg-accent/60 transition-colors"
+                        className="w-full text-left rounded-lg bg-background/80 px-3 py-3 md:px-4 md:py-3 hover:bg-accent/70 hover:shadow-sm transition-colors"
                       >
-                        <div className="text-[11px] md:text-xs font-mono text-primary mb-0.5">
+                        <div className="text-[11px] md:text-xs font-mono text-primary mb-1">
                           {occ.reference}
                         </div>
-                        <div className="text-xs md:text-sm text-foreground/90">
+                        <div className="text-sm md:text-base text-foreground/90 leading-snug">
                           {renderHighlightedText(
                             occ.verseText,
                             occ.matchText
@@ -630,7 +630,7 @@ export function BibleReader({
       {/* MAIN SCROLL AREA */}
       <ScrollArea className="flex-1">
         <div
-          className="max-w-3xl mx-auto px-6 py-8"
+          className="max-w-3xl mx-auto px-6 py-8 pb-24"
           style={{ fontSize: `${fontSize}px` }}
         >
           {verses.map((verse) => {
