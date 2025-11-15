@@ -15,14 +15,20 @@ import {
 
 export default function Home() {
   const { theme, toggleTheme } = useTheme();
+
   const [selectedBook, setSelectedBook] = useState('John');
   const [selectedChapter, setSelectedChapter] = useState(1);
-  const [showStrongsNumbers, setShowStrongsNumbers] = useState(false);
+
+  // ✅ Strong’s ON by default now
+  const [showStrongsNumbers, setShowStrongsNumbers] = useState(true);
   const [showInterlinear, setShowInterlinear] = useState(false);
   const [showNotes, setShowNotes] = useState(true);
   const [fontSize, setFontSize] = useState(17);
   const [displayMode, setDisplayMode] = useState<'verse' | 'book'>('verse');
   const [selectedTranslation, setSelectedTranslation] = useState<Translation>('KJV');
+
+  // ✅ Controls the desktop settings panel on the right
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
 
   const style = {
     "--sidebar-width": "18rem",
@@ -45,6 +51,7 @@ export default function Home() {
             </div>
             
             <div className="flex items-center gap-2">
+              {/* 📱 Mobile settings (Sheet stays the same) */}
               <Sheet>
                 <SheetTrigger asChild>
                   <Button
@@ -74,13 +81,28 @@ export default function Home() {
                 </SheetContent>
               </Sheet>
 
+              {/* 💻 Desktop Settings toggle button */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="hidden md:inline-flex"
+                onClick={() => setShowSettingsPanel(prev => !prev)}
+                data-testid="button-settings-desktop"
+              >
+                <Settings className="h-4 w-4 mr-1" />
+                {showSettingsPanel ? 'Hide settings' : 'Show settings'}
+              </Button>
+
+              {/* Theme toggle */}
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={toggleTheme}
                 data-testid="button-theme-toggle"
               >
-                {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                {theme === 'light'
+                  ? <Moon className="h-4 w-4" />
+                  : <Sun className="h-4 w-4" />}
               </Button>
             </div>
           </header>
@@ -99,22 +121,25 @@ export default function Home() {
               />
             </div>
 
-            <div className="hidden md:block w-80 border-l overflow-auto">
-              <ToolsPanel
-                showStrongsNumbers={showStrongsNumbers}
-                showInterlinear={showInterlinear}
-                showNotes={showNotes}
-                fontSize={fontSize}
-                displayMode={displayMode}
-                selectedTranslation={selectedTranslation}
-                onToggleStrongsNumbers={setShowStrongsNumbers}
-                onToggleInterlinear={setShowInterlinear}
-                onToggleNotes={setShowNotes}
-                onFontSizeChange={setFontSize}
-                onDisplayModeChange={setDisplayMode}
-                onTranslationChange={setSelectedTranslation}
-              />
-            </div>
+            {/* 🧰 Desktop ToolsPanel – now toggleable */}
+            {showSettingsPanel && (
+              <div className="hidden md:block w-80 border-l overflow-auto">
+                <ToolsPanel
+                  showStrongsNumbers={showStrongsNumbers}
+                  showInterlinear={showInterlinear}
+                  showNotes={showNotes}
+                  fontSize={fontSize}
+                  displayMode={displayMode}
+                  selectedTranslation={selectedTranslation}
+                  onToggleStrongsNumbers={setShowStrongsNumbers}
+                  onToggleInterlinear={setShowInterlinear}
+                  onToggleNotes={setShowNotes}
+                  onFontSizeChange={setFontSize}
+                  onDisplayModeChange={setDisplayMode}
+                  onTranslationChange={setSelectedTranslation}
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>
