@@ -41,22 +41,23 @@ type AddingNote = {
   wordText?: string;
 };
 
+type SelectedStrong = {
+  strongNumber: string;
+  verseReference: string;
+};
+
 type StrongOccurrence = {
   verseId: string;
-  reference: string;   // e.g. "John 1:1"
-  english: string;     // the English token
-  original?: string;   // Greek/Hebrew if present
+  reference: string;
+  verseText: string;
+  matchText: string;
+  book: string;
+  chapter: number;
+  verse: number;
 };
 
-type SelectedStrong = {
-  strongNumber: string;          // e.g. "G3056"
-  verseReference: string;        // where it was clicked, e.g. "John 1:1"
-  occurrences: StrongOccurrence[]; // all NT occurrences
-};
-
-// 🔢 New Testament books + chapter counts
-// Make sure names match the "book" field in your bibleData.
-const NT_BOOK_CHAPTERS: { book: string; chapters: number }[] = [
+// New Testament book/chapter map for scanning
+const NT_BOOK_CHAPTERS = [
   { book: "Matthew", chapters: 28 },
   { book: "Mark", chapters: 16 },
   { book: "Luke", chapters: 24 },
@@ -106,17 +107,20 @@ export function BibleReader({
     verseId: string;
     text: string;
   } | null>(null);
+
   const [selectedStrong, setSelectedStrong] = useState<SelectedStrong | null>(
     null
   );
+  const [strongOccurrences, setStrongOccurrences] = useState<StrongOccurrence[]>(
+    []
+  );
+  const [isScanningOccurrences, setIsScanningOccurrences] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isLoadingOccurrences, setIsLoadingOccurrences] = useState(false);
 
   const hasSelectedStrong = !!selectedStrong;
-  const activeStrongNumber = selectedStrong?.strongNumber ?? undefined;
   const { toast } = useToast();
 
-  // Load current chapter + saved highlights/notes
+  // Load verses + saved highlights/notes
   useEffect(() => {
     let cancelled = false;
 
@@ -129,7 +133,7 @@ export function BibleReader({
         );
 
         if (!cancelled) {
-          setVerses(loadedVerses as BibleVerseWithTokens[]);
+          setVerses(loadedVerses);
 
           const savedHighlights = localStorage.getItem("bible-highlights");
           const savedNotes = localStorage.getItem("bible-notes");
@@ -329,104 +333,133 @@ export function BibleReader({
     }
   };
 
-  // 🔍 When you click a Strong’s:
-  // - If same Strong’s already active → close it
-  // - Otherwise: set it active immediately (so definition shows),
-  //   then scan the whole NT in the background and fill occurrences.
+  // 🔍 Scroll to a verse when you click an occurrence
+  const handleJumpToOccurrence = (occ: StrongOccurrence) => {
+    // If it's in the current chapter, smooth scroll & flash it
+    if (occ.book === book && occ.chapter === chapter) {
+      const el = document.querySelector<HTMLElement>(
+        `[data-verse-id="${occ.verseId}"]`
+      );
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ring-2", "ring-primary/60", "bg-accent/20");
+        setTimeout(() => {
+          el.classList.remove("ring-2", "ring-primary/60", "bg-accent/20");
+        }, 1500);
+      }
+    } else {
+      // For now, just notify; wiring true book/chapter navigation
+      // would happen in a parent component.
+      toast({
+        title: "Go to verse",
+        description: `Navigation to ${occ.reference} across books/chapters isn't wired up yet.`,
+        variant: "default",
+      });
+    }
+  };
+
+  // Highlight the matching word inside the verse text in the occurrences list
+  const renderHighlightedOccurrence = (occ: StrongOccurrence) => {
+    const { verseText, matchText } = occ;
+    if (!matchText) return verseText;
+
+    const lowerText = verseText.toLowerCase();
+    const lowerMatch = matchText.toLowerCase();
+    const idx = lowerText.indexOf(lowerMatch);
+
+    if (idx === -1) return verseText;
+
+    const before = verseText.slice(0, idx);
+    const match = verseText.slice(idx, idx + matchText.length);
+    const after = verseText.slice(idx + matchText.length);
+
+    return (
+      <>
+        {before}
+        <span className="bg-primary/20 font-semibold rounded px-0.5">
+          {match}
+        </span>
+        {after}
+      </>
+    );
+  };
+
+  // 🧠 Handle Strong's click: toggle, then scan NT for occurrences
   const handleStrongClick = async (verseId: string, strongNumber: string) => {
     const normalized = strongNumber.toUpperCase().trim();
 
-    // Toggle off if same Strong is already active
-    if (selectedStrong?.strongNumber === normalized) {
+    // If you click the same Strong's again, close it
+    if (selectedStrong && selectedStrong.strongNumber === normalized) {
       setSelectedStrong(null);
+      setStrongOccurrences([]);
       return;
     }
 
-    const clickedVerse = verses.find(
+    const verse = verses.find(
       (v) => v.id === verseId
     ) as BibleVerseWithTokens | undefined;
-    if (!clickedVerse) return;
+    if (!verse) return;
 
-    // Show definition immediately with empty occurrences
     setSelectedStrong({
       strongNumber: normalized,
-      verseReference: `${clickedVerse.book} ${clickedVerse.chapter}:${clickedVerse.verse}`,
-      occurrences: [],
+      verseReference: `${verse.book} ${verse.chapter}:${verse.verse}`,
     });
 
-    setIsLoadingOccurrences(true);
+    setIsScanningOccurrences(true);
+    setStrongOccurrences([]);
 
-    try {
-      const allOccurrences: StrongOccurrence[] = [];
+    const allOccurrences: StrongOccurrence[] = [];
 
-      // Scan all NT books/chapters for this Strong’s
-      for (const entry of NT_BOOK_CHAPTERS) {
-  for (let ch = 1; ch <= entry.chapters; ch++) {
-    try {
-      const chapterVerses = await getVersesByChapter(
-        entry.book,
-        ch,
-        selectedTranslation
-      );
+    for (const entry of NT_BOOK_CHAPTERS) {
+      for (let ch = 1; ch <= entry.chapters; ch++) {
+        try {
+          const chapterVerses = await getVersesByChapter(
+            entry.book,
+            ch,
+            selectedTranslation
+          );
 
-      const asTokens = chapterVerses as BibleVerseWithTokens[];
+          const asTokens = chapterVerses as BibleVerseWithTokens[];
 
-      for (const v of asTokens) {
-        const tokens = v.tokens || [];
-        tokens.forEach((token) => {
-          if (!token.strongs) return;
-          const strongsArray = Array.isArray(token.strongs)
-            ? token.strongs
-            : [token.strongs];
+          for (const v of asTokens) {
+            const tokens = v.tokens || [];
+            tokens.forEach((token) => {
+              if (!token.strongs) return;
 
-          if (
-            strongsArray.some(
-              (s) => s.toUpperCase().trim() === normalized
-            )
-          ) {
-            allOccurrences.push({
-              verseId: v.id,
-              reference: `${v.book} ${v.chapter}:${v.verse}`,
-              english: token.english,
-              original: token.original,
+              const strongsArray = Array.isArray(token.strongs)
+                ? token.strongs
+                : [token.strongs];
+
+              if (
+                strongsArray.some(
+                  (s) => s.toUpperCase().trim() === normalized
+                )
+              ) {
+                allOccurrences.push({
+                  verseId: v.id,
+                  reference: `${v.book} ${v.chapter}:${v.verse}`,
+                  verseText: v.text,
+                  matchText: token.english,
+                  book: v.book,
+                  chapter: v.chapter,
+                  verse: v.verse,
+                });
+              }
             });
           }
-        });
+        } catch (err) {
+          // If a book/chapter (like Mark) has no Strong's data, just skip it
+          console.warn(
+            `Failed to load occurrences for ${entry.book} ${ch}:`,
+            err
+          );
+          continue;
+        }
       }
-    } catch (err) {
-      // If Mark (or any book) is missing data, just skip it
-      console.warn(
-        `Failed to load occurrences for ${entry.book} ${ch}:`,
-        err
-      );
-      continue;
     }
-  }
-}
 
-      
-
-      // Only update if this Strong is still the one selected
-      setSelectedStrong((prev) => {
-        if (!prev || prev.strongNumber !== normalized) return prev;
-        return {
-          ...prev,
-          occurrences: allOccurrences,
-        };
-      });
-    } catch (err) {
-      console.error(err);
-      toast({
-        title: "Error scanning occurrences",
-        description:
-          err instanceof Error
-            ? err.message
-            : "Failed to scan the New Testament for this Strong's number.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoadingOccurrences(false);
-    }
+    setStrongOccurrences(allOccurrences);
+    setIsScanningOccurrences(false);
   };
 
   return (
@@ -463,7 +496,7 @@ export function BibleReader({
           </div>
         </div>
 
-        {/* Strong’s inline definition under header */}
+        {/* Strong’s inline definition + NT occurrences */}
         {hasSelectedStrong && selectedStrong && (
           <div className="pt-2 space-y-2">
             <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -471,25 +504,55 @@ export function BibleReader({
                 Strong&apos;s {selectedStrong.strongNumber} ·{" "}
                 {selectedStrong.verseReference}
               </span>
-              {isLoadingOccurrences && (
-                <span className="text-[10px] italic">
-                  Scanning New Testament…
+              {isScanningOccurrences && (
+                <span className="text-[11px] text-muted-foreground/80">
+                  Scanning NT…
                 </span>
               )}
             </div>
 
-            <StrongDefinitionInline
-              strongNumber={selectedStrong.strongNumber}
-              occurrences={selectedStrong.occurrences}
-              isLoadingOccurrences={isLoadingOccurrences}
-            />
+            {/* Definition */}
+            <StrongDefinitionInline strongNumber={selectedStrong.strongNumber} />
 
-            {/* ⬇️ Arrow button to close Strong’s panel */}
+            {/* Occurrences list */}
+            <div className="pt-2">
+              {!isScanningOccurrences && strongOccurrences.length > 0 && (
+                <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
+                  {strongOccurrences.map((occ) => (
+                    <button
+                      key={`${occ.verseId}-${occ.matchText}`}
+                      type="button"
+                      onClick={() => handleJumpToOccurrence(occ)}
+                      className="w-full text-left rounded-md px-2 py-1.5 hover:bg-accent/60 transition-colors"
+                    >
+                      <div className="text-[11px] font-mono text-primary mb-0.5">
+                        {occ.reference}
+                      </div>
+                      <div className="text-xs text-foreground/90">
+                        {renderHighlightedOccurrence(occ)}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {!isScanningOccurrences && strongOccurrences.length === 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  No New Testament occurrences found (or Strong&apos;s tagging
+                  missing).
+                </p>
+              )}
+            </div>
+
+            {/* Close Strong's */}
             <div className="flex justify-center pt-1">
               <button
                 type="button"
                 className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors"
-                onClick={() => setSelectedStrong(null)}
+                onClick={() => {
+                  setSelectedStrong(null);
+                  setStrongOccurrences([]);
+                }}
               >
                 <ChevronDown className="h-3 w-3" />
                 <span>Close Strong&apos;s</span>
@@ -564,7 +627,6 @@ export function BibleReader({
                         }
                       : null
                   }
-                  activeStrongNumber={activeStrongNumber}
                 />
 
                 {/* Verse-level notes */}
