@@ -42,8 +42,10 @@ type AddingNote = {
 };
 
 type SelectedStrong = {
-  strongNumber: string;
-  verseReference: string;
+  strongNumber: string;      // single Strong’s number (e.g. "G3056")
+  verseReference: string;    // e.g. "John 1:1"
+  verseText: string;         // full verse text
+  matchText: string;         // the English word you clicked
 };
 
 type StrongOccurrence = {
@@ -115,6 +117,7 @@ export function BibleReader({
     []
   );
   const [isScanningOccurrences, setIsScanningOccurrences] = useState(false);
+  const [showOccurrences, setShowOccurrences] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   const hasSelectedStrong = !!selectedStrong;
@@ -335,7 +338,6 @@ export function BibleReader({
 
   // 🔍 Scroll to a verse when you click an occurrence
   const handleJumpToOccurrence = (occ: StrongOccurrence) => {
-    // If it's in the current chapter, smooth scroll & flash it
     if (occ.book === book && occ.chapter === chapter) {
       const el = document.querySelector<HTMLElement>(
         `[data-verse-id="${occ.verseId}"]`
@@ -348,8 +350,6 @@ export function BibleReader({
         }, 1500);
       }
     } else {
-      // For now, just notify; wiring true book/chapter navigation
-      // would happen in a parent component.
       toast({
         title: "Go to verse",
         description: `Navigation to ${occ.reference} across books/chapters isn't wired up yet.`,
@@ -358,9 +358,8 @@ export function BibleReader({
     }
   };
 
-  // Highlight the matching word inside the verse text in the occurrences list
-  const renderHighlightedOccurrence = (occ: StrongOccurrence) => {
-    const { verseText, matchText } = occ;
+  // Highlight a word inside text (for selected verse + occurrences)
+  const renderHighlightedText = (verseText: string, matchText: string) => {
     if (!matchText) return verseText;
 
     const lowerText = verseText.toLowerCase();
@@ -376,7 +375,7 @@ export function BibleReader({
     return (
       <>
         {before}
-        <span className="bg-primary/20 font-semibold rounded px-0.5">
+        <span className="bg-primary/25 font-semibold rounded px-0.5">
           {match}
         </span>
         {after}
@@ -384,7 +383,7 @@ export function BibleReader({
     );
   };
 
-  // 🧠 Handle Strong's click: toggle, then scan NT for occurrences
+  // 🧠 Handle Strong's click: toggle panel + scan NT for occurrences
   const handleStrongClick = async (verseId: string, strongNumber: string) => {
     const normalized = strongNumber.toUpperCase().trim();
 
@@ -392,6 +391,7 @@ export function BibleReader({
     if (selectedStrong && selectedStrong.strongNumber === normalized) {
       setSelectedStrong(null);
       setStrongOccurrences([]);
+      setShowOccurrences(false);
       return;
     }
 
@@ -400,13 +400,34 @@ export function BibleReader({
     ) as BibleVerseWithTokens | undefined;
     if (!verse) return;
 
+    const tokens = verse.tokens || [];
+    let matchText = "";
+
+    for (const token of tokens) {
+      if (!token.strongs) continue;
+      const strongsArray = Array.isArray(token.strongs)
+        ? token.strongs
+        : [token.strongs];
+      if (
+        strongsArray.some(
+          (s) => s.toUpperCase().trim() === normalized
+        )
+      ) {
+        matchText = token.english;
+        break;
+      }
+    }
+
     setSelectedStrong({
       strongNumber: normalized,
       verseReference: `${verse.book} ${verse.chapter}:${verse.verse}`,
+      verseText: verse.text,
+      matchText,
     });
 
     setIsScanningOccurrences(true);
     setStrongOccurrences([]);
+    setShowOccurrences(false);
 
     const allOccurrences: StrongOccurrence[] = [];
 
@@ -422,8 +443,8 @@ export function BibleReader({
           const asTokens = chapterVerses as BibleVerseWithTokens[];
 
           for (const v of asTokens) {
-            const tokens = v.tokens || [];
-            tokens.forEach((token) => {
+            const verseTokens = v.tokens || [];
+            verseTokens.forEach((token) => {
               if (!token.strongs) return;
 
               const strongsArray = Array.isArray(token.strongs)
@@ -448,7 +469,6 @@ export function BibleReader({
             });
           }
         } catch (err) {
-          // If a book/chapter (like Mark) has no Strong's data, just skip it
           console.warn(
             `Failed to load occurrences for ${entry.book} ${ch}:`,
             err
@@ -467,7 +487,7 @@ export function BibleReader({
       {/* HEADER */}
       <div
         className={`border-b px-6 transition-all ${
-          hasSelectedStrong ? "py-4 space-y-3" : "py-3 space-y-2"
+          hasSelectedStrong ? "py-4 space-y-4" : "py-3 space-y-2"
         }`}
       >
         {/* Title + Search row */}
@@ -496,51 +516,95 @@ export function BibleReader({
           </div>
         </div>
 
-        {/* Strong’s inline definition + NT occurrences */}
+        {/* Strong’s inline definition + selected verse + NT occurrences */}
         {hasSelectedStrong && selectedStrong && (
-          <div className="pt-2 space-y-2">
-            <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-muted-foreground">
+          <div className="pt-1 space-y-3">
+            {/* Header row */}
+            <div className="flex items-center justify-between text-[11px] md:text-xs uppercase tracking-wide text-muted-foreground">
               <span>
                 Strong&apos;s {selectedStrong.strongNumber} ·{" "}
                 {selectedStrong.verseReference}
               </span>
               {isScanningOccurrences && (
-                <span className="text-[11px] text-muted-foreground/80">
+                <span className="text-[11px] md:text-xs text-muted-foreground/80">
                   Scanning NT…
                 </span>
               )}
             </div>
 
-            {/* Definition */}
+            {/* Selected verse with highlighted word */}
+            <div className="rounded-lg bg-background/90 border px-3 py-2 md:px-4 md:py-3 shadow-sm">
+              <div className="text-[11px] md:text-xs font-mono text-primary/80 mb-1">
+                {selectedStrong.verseReference}
+              </div>
+              <div className="text-sm md:text-base leading-snug">
+                {renderHighlightedText(
+                  selectedStrong.verseText,
+                  selectedStrong.matchText
+                )}
+              </div>
+            </div>
+
+            {/* Definition (bigger font now) */}
             <StrongDefinitionInline strongNumber={selectedStrong.strongNumber} />
 
-            {/* Occurrences list */}
-            <div className="pt-2">
-              {!isScanningOccurrences && strongOccurrences.length > 0 && (
-                <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
-                  {strongOccurrences.map((occ) => (
-                    <button
-                      key={`${occ.verseId}-${occ.matchText}`}
-                      type="button"
-                      onClick={() => handleJumpToOccurrence(occ)}
-                      className="w-full text-left rounded-md px-2 py-1.5 hover:bg-accent/60 transition-colors"
-                    >
-                      <div className="text-[11px] font-mono text-primary mb-0.5">
-                        {occ.reference}
-                      </div>
-                      <div className="text-xs text-foreground/90">
-                        {renderHighlightedOccurrence(occ)}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
+            {/* Occurrences toggle + panel */}
+            <div className="pt-1 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] md:text-xs text-muted-foreground">
+                  New Testament occurrences:{" "}
+                  {isScanningOccurrences
+                    ? "scanning…"
+                    : strongOccurrences.length}
+                </span>
 
-              {!isScanningOccurrences && strongOccurrences.length === 0 && (
-                <p className="text-[11px] text-muted-foreground">
-                  No New Testament occurrences found (or Strong&apos;s tagging
-                  missing).
-                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowOccurrences((prev) => !prev)}
+                  className="text-[11px] md:text-xs px-2 py-1 rounded-full border border-border hover:border-primary/60 hover:bg-accent/40 transition-colors"
+                >
+                  {showOccurrences ? "Hide occurrences" : "Show occurrences"}
+                </button>
+              </div>
+
+              {showOccurrences && (
+                <div className="max-h-[55vh] overflow-y-auto space-y-1.5 pr-1 border-t border-border/60 pt-2">
+                  {isScanningOccurrences && (
+                    <p className="text-[11px] md:text-xs text-muted-foreground">
+                      Scanning New Testament for Strong&apos;s{" "}
+                      {selectedStrong.strongNumber}…
+                    </p>
+                  )}
+
+                  {!isScanningOccurrences &&
+                    strongOccurrences.length > 0 &&
+                    strongOccurrences.map((occ) => (
+                      <button
+                        key={`${occ.verseId}-${occ.matchText}`}
+                        type="button"
+                        onClick={() => handleJumpToOccurrence(occ)}
+                        className="w-full text-left rounded-md px-2 py-2 hover:bg-accent/60 transition-colors"
+                      >
+                        <div className="text-[11px] md:text-xs font-mono text-primary mb-0.5">
+                          {occ.reference}
+                        </div>
+                        <div className="text-xs md:text-sm text-foreground/90">
+                          {renderHighlightedText(
+                            occ.verseText,
+                            occ.matchText
+                          )}
+                        </div>
+                      </button>
+                    ))}
+
+                  {!isScanningOccurrences &&
+                    strongOccurrences.length === 0 && (
+                      <p className="text-[11px] md:text-xs text-muted-foreground">
+                        No New Testament occurrences found (or Strong&apos;s
+                        tagging is missing in this dataset).
+                      </p>
+                    )}
+                </div>
               )}
             </div>
 
@@ -548,10 +612,11 @@ export function BibleReader({
             <div className="flex justify-center pt-1">
               <button
                 type="button"
-                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors"
+                className="inline-flex items-center gap-1 text-[11px] md:text-xs text-muted-foreground hover:text-primary transition-colors"
                 onClick={() => {
                   setSelectedStrong(null);
                   setStrongOccurrences([]);
+                  setShowOccurrences(false);
                 }}
               >
                 <ChevronDown className="h-3 w-3" />
