@@ -10,8 +10,8 @@ interface NoteEditorProps {
   verseReference: string;
   wordText?: string;
   /**
-   * If true (default), allow choosing a verse range for this note.
-   * For word notes, we usually pass false so it only applies to that verse.
+   * If true, allow choosing a verse range for this note.
+   * For word notes we pass false so it only applies to that single verse.
    */
   enableRange?: boolean;
   onSave: (content: string, range?: { startVerse: number; endVerse: number }) => void;
@@ -36,24 +36,40 @@ export function NoteEditor({
   const [startVerse, setStartVerse] = useState<number>(1);
   const [endVerse, setEndVerse] = useState<number>(1);
 
-  // Parse verse number from something like "John 3:16"
+  // Parse verse number from something like "John 3:16" or "John 3:16–18"
   useEffect(() => {
-    const parts = verseReference.split(":");
-    const num = parseInt(parts[1] ?? "1", 10);
-    if (!Number.isNaN(num)) {
-      setStartVerse(num);
-      setEndVerse(num);
+    const [, ref] = verseReference.split(" ");
+    const [chapterPart, versePart] = (ref ?? "").split(":");
+    const verseSegment = versePart ?? "1";
+    const [startStr, endStr] = verseSegment.split("-");
+
+    const startNum = parseInt(startStr ?? "1", 10);
+    const endNum = parseInt(endStr ?? startStr ?? "1", 10);
+
+    if (!Number.isNaN(startNum)) {
+      setStartVerse(startNum);
+    } else {
+      setStartVerse(1);
+    }
+
+    if (!Number.isNaN(endNum)) {
+      setEndVerse(endNum);
+    } else {
+      setEndVerse(startNum || 1);
     }
   }, [verseReference]);
 
   const handleSaveClick = () => {
+    const trimmed = content.trim();
+    if (!trimmed) return;
+
+    // If range is enabled and selected, return the range, otherwise single-verse
     if (scopeMode === "range" && enableRange) {
-      onSave(content.trim(), {
-        startVerse,
-        endVerse,
-      });
+      const start = Math.min(startVerse, endVerse);
+      const end = Math.max(startVerse, endVerse);
+      onSave(trimmed, { startVerse: start, endVerse: end });
     } else {
-      onSave(content.trim());
+      onSave(trimmed);
     }
   };
 
