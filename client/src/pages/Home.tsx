@@ -35,7 +35,7 @@ export default function Home() {
   };
 
   return (
-    <SidebarProvider style={style as React.CSSProperties}>
+    <SidebarProvider defaultOpen={false} style={style as React.CSSProperties}>
       <div className="flex h-screen w-full">
         <AppSidebar
           selectedBook={selectedBook}
