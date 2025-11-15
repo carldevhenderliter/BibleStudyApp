@@ -394,7 +394,7 @@ export function BibleReader({
   }
 }
 
-      }
+      
 
       // Only update if this Strong is still the one selected
       setSelectedStrong((prev) => {
