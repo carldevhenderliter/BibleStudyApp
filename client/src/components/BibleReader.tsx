@@ -116,7 +116,8 @@ export function BibleReader({
   const [strongOccurrences, setStrongOccurrences] = useState<StrongOccurrence[]>(
     []
   );
-  const [isScanningOccurrences, setIsScanningOccurrences] = useState(false);
+  const [isScanningOccurrences, setIsScanningOccurrences] =
+    useState(false);
   const [showOccurrences, setShowOccurrences] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -383,7 +384,7 @@ export function BibleReader({
     );
   };
 
-  // 🧠 Handle Strong's click: toggle panel + scan NT for occurrences
+  // 🧠 Strong's click: toggle panel + scan NT for occurrences
   const handleStrongClick = async (verseId: string, strongNumber: string) => {
     const normalized = strongNumber.toUpperCase().trim();
 
@@ -532,7 +533,7 @@ export function BibleReader({
               )}
             </div>
 
-            {/* Selected verse with highlighted word */}
+            {/* Selected verse with highlighted word (always visible) */}
             <div className="rounded-xl bg-background/95 border px-4 py-3 md:px-5 md:py-4 shadow-sm">
               <div className="text-[11px] md:text-xs font-mono text-primary/80 mb-1">
                 {selectedStrong.verseReference}
@@ -545,8 +546,12 @@ export function BibleReader({
               </div>
             </div>
 
-            {/* Definition (bigger font now) */}
-            <StrongDefinitionInline strongNumber={selectedStrong.strongNumber} />
+            {/* Definition: only visible when occurrences are HIDDEN */}
+            {!showOccurrences && (
+              <StrongDefinitionInline
+                strongNumber={selectedStrong.strongNumber}
+              />
+            )}
 
             {/* Occurrences toggle + panel */}
             <div className="pt-1 space-y-2">
@@ -563,7 +568,7 @@ export function BibleReader({
                   onClick={() => setShowOccurrences((prev) => !prev)}
                   className="text-[11px] md:text-xs px-2 py-1 rounded-full border border-border hover:border-primary/60 hover:bg-accent/40 transition-colors"
                 >
-                  {showOccurrences ? "Hide occurrences" : "Show occurrences"}
+                  {showOccurrences ? "Close occurrences" : "Show occurrences"}
                 </button>
               </div>
 
