@@ -341,7 +341,8 @@ export function BibleReader({
         wordText: addingNote.wordText,
       };
 
-      const updatedNotes = [...notes, newNote];
+      const updatedNotes = [...notes];
+      updatedNotes.push(newNote);
       setNotes(updatedNotes);
       localStorage.setItem("bible-notes", JSON.stringify(updatedNotes));
       setAddingNote(null);
@@ -800,73 +801,87 @@ export function BibleReader({
                   key={`group-${verse.id}-${maxEndVerse}`}
                   className="md:flex md:items-start md:gap-6 mb-6"
                 >
-                  {/* LEFT: all verses in the range */}
-                  <div className="flex-1 space-y-4">
-                    {groupedVerses.map((v) => {
-                      const vHighlight = highlights.find(
-                        (h) => h.verseId === v.id && h.wordIndex === undefined
-                      );
-                      const vWordHighlights = highlights.filter(
-                        (h) => h.verseId === v.id && h.wordIndex !== undefined
-                      );
-                      const vHasTokens =
-                        (v as BibleVerseWithTokens).tokens &&
-                        (v as BibleVerseWithTokens).tokens!.length > 0;
-                      const vShowWordByWord =
-                        (showStrongsNumbers || showInterlinear) && vHasTokens;
+                  {/* LEFT: all verses in the range inside a highlighted container */}
+                  <div className="flex-1">
+                    <div className="rounded-xl border border-primary/40 bg-accent/40 px-3 py-3 md:px-4 md:py-4 space-y-4">
+                      <div className="text-[11px] md:text-xs font-mono text-primary/80 mb-1">
+                        Note covers {rangeLabel}
+                      </div>
 
-                      const vWordNotes = notes.filter(
-                        (n) => n.verseId === v.id && n.wordIndex !== undefined
-                      );
+                      {groupedVerses.map((v) => {
+                        const vHighlight = highlights.find(
+                          (h) =>
+                            h.verseId === v.id && h.wordIndex === undefined
+                        );
+                        const vWordHighlights = highlights.filter(
+                          (h) =>
+                            h.verseId === v.id && h.wordIndex !== undefined
+                        );
+                        const vHasTokens =
+                          (v as BibleVerseWithTokens).tokens &&
+                          (v as BibleVerseWithTokens).tokens!.length > 0;
+                        const vShowWordByWord =
+                          (showStrongsNumbers || showInterlinear) &&
+                          vHasTokens;
 
-                      return (
-                        <div key={v.id} data-verse-id={v.id}>
-                          <VerseDisplay
-                            verse={v}
-                            highlight={vHighlight}
-                            wordHighlights={vWordHighlights}
-                            showStrongsNumbers={showStrongsNumbers}
-                            showInterlinear={showInterlinear}
-                            showNotes={showNotes}
-                            displayMode={displayMode}
-                            showWordByWord={vShowWordByWord}
-                            onAddNote={() =>
-                              setAddingNote({ verseId: v.id })
-                            }
-                            onAddWordNote={(wordIndex, wordText) =>
-                              handleAddWordNote(v.id, wordIndex, wordText)
-                            }
-                            onSaveWordNote={handleSaveWordNote}
-                            onCancelWordNote={handleCancelWordNote}
-                            onHighlightWord={(wordIndex, wordText, color) =>
-                              handleHighlightWord(
-                                v.id,
+                        const vWordNotes = notes.filter(
+                          (n) =>
+                            n.verseId === v.id && n.wordIndex !== undefined
+                        );
+
+                        return (
+                          <div key={v.id} data-verse-id={v.id}>
+                            <VerseDisplay
+                              verse={v}
+                              highlight={vHighlight}
+                              wordHighlights={vWordHighlights}
+                              showStrongsNumbers={showStrongsNumbers}
+                              showInterlinear={showInterlinear}
+                              showNotes={showNotes}
+                              displayMode={displayMode}
+                              showWordByWord={vShowWordByWord}
+                              onAddNote={() =>
+                                setAddingNote({ verseId: v.id })
+                              }
+                              onAddWordNote={(wordIndex, wordText) =>
+                                handleAddWordNote(v.id, wordIndex, wordText)
+                              }
+                              onSaveWordNote={handleSaveWordNote}
+                              onCancelWordNote={handleCancelWordNote}
+                              onHighlightWord={(
                                 wordIndex,
                                 wordText,
-                                color as HighlightColor
-                              )
-                            }
-                            onTextSelect={(text) =>
-                              handleTextSelect(v.id, text)
-                            }
-                            onStrongClick={(strongNumber) =>
-                              handleStrongClick(v.id, strongNumber)
-                            }
-                            wordNotes={vWordNotes}
-                            activeWordNote={
-                              addingNote?.verseId === v.id &&
-                              addingNote.wordIndex !== undefined
-                                ? {
-                                    verseId: addingNote.verseId,
-                                    wordIndex: addingNote.wordIndex,
-                                    wordText: addingNote.wordText,
-                                  }
-                                : null
-                            }
-                          />
-                        </div>
-                      );
-                    })}
+                                color
+                              ) =>
+                                handleHighlightWord(
+                                  v.id,
+                                  wordIndex,
+                                  wordText,
+                                  color as HighlightColor
+                                )
+                              }
+                              onTextSelect={(text) =>
+                                handleTextSelect(v.id, text)
+                              }
+                              onStrongClick={(strongNumber) =>
+                                handleStrongClick(v.id, strongNumber)
+                              }
+                              wordNotes={vWordNotes}
+                              activeWordNote={
+                                addingNote?.verseId === v.id &&
+                                addingNote.wordIndex !== undefined
+                                  ? {
+                                      verseId: addingNote.verseId,
+                                      wordIndex: addingNote.wordIndex,
+                                      wordText: addingNote.wordText,
+                                    }
+                                  : null
+                              }
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   {/* RIGHT: grouped notes column */}
