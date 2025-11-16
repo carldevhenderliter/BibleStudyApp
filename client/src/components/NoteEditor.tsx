@@ -4,13 +4,26 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { X, Trash2 } from "lucide-react";
 
-interface NoteWithRange extends Note {
-  startVerse?: number;
-  endVerse?: number;
-}
+/**
+ * These should match the types used in BibleReader.
+ */
+type NoteTheme = "yellow" | "blue" | "green" | "purple" | "pink" | "gray";
+
+type NoteSaveOptions = {
+  range?: { startVerse: number; endVerse: number };
+  theme?: NoteTheme;
+  crossReferences?: string;
+  title?: string;
+};
 
 interface NoteEditorProps {
-  note?: NoteWithRange;
+  note?: Note & {
+    startVerse?: number;
+    endVerse?: number;
+    noteTheme?: NoteTheme;
+    crossReferences?: string;
+    title?: string;
+  };
   verseId: string;
   verseReference: string;
   wordText?: string;
@@ -19,19 +32,11 @@ interface NoteEditorProps {
    * For word notes we pass false so it only applies to that single verse.
    */
   enableRange?: boolean;
-  onSave: (content: string, range?: { startVerse: number; endVerse: number }) => void;
+  onSave: (content: string, options?: NoteSaveOptions) => void;
   onDelete?: () => void;
   onCancel: () => void;
 }
 
-const EDITOR_HEIGHT_KEY = "note-editor-height";
-
-/**
- * Editor behavior:
- * - taller by default (about 8 lines)
- * - user can resize with the handle
- * - last height is saved in localStorage and reused next time
- */
 export function NoteEditor({
   note,
   verseId,
@@ -43,32 +48,22 @@ export function NoteEditor({
   onCancel,
 }: NoteEditorProps) {
   const [content, setContent] = useState(note?.content ?? "");
+  const [title, setTitle] = useState(note?.title ?? "");
+  const [theme, setTheme] = useState<NoteTheme>(note?.noteTheme ?? "yellow");
+  const [crossRefs, setCrossRefs] = useState(note?.crossReferences ?? "");
 
   // scope: this verse only vs range of verses within the same chapter
   const [scopeMode, setScopeMode] = useState<"single" | "range">("single");
   const [startVerse, setStartVerse] = useState<number>(1);
   const [endVerse, setEndVerse] = useState<number>(1);
 
-  // persistent editor height (in px)
-  const [editorHeight, setEditorHeight] = useState<number | undefined>(undefined);
-
-  // Load saved editor height on mount
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = window.localStorage.getItem(EDITOR_HEIGHT_KEY);
-    if (!saved) return;
-    const parsed = parseInt(saved, 10);
-    if (!Number.isNaN(parsed) && parsed > 0) {
-      setEditorHeight(parsed);
-    }
-  }, []);
-
   // Parse verse number from something like "John 3:16" or "John 3:16–18"
   useEffect(() => {
-    const [, ref] = verseReference.split(" "); // "John 3:16" -> ["John", "3:16"]
+    const [, ref] = verseReference.split(" ");
     const [chapterPart, versePart] = (ref ?? "").split(":");
     const verseSegment = versePart ?? "1";
     const [startStr, endStr] = verseSegment.split("-");
+
     const startNum = parseInt(startStr ?? "1", 10);
     const endNum = parseInt(endStr ?? startStr ?? "1", 10);
 
@@ -83,65 +78,64 @@ export function NoteEditor({
     } else {
       setEndVerse(startNum || 1);
     }
+  }, [verseReference]);
 
-    // If editing an existing note that already has a range, prefer that
-    if (
-      note &&
-      typeof note.startVerse === "number" &&
-      typeof note.endVerse === "number"
-    ) {
-      setStartVerse(note.startVerse);
-      setEndVerse(note.endVerse);
-      if (note.startVerse !== note.endVerse) {
-        setScopeMode("range");
-      } else {
-        setScopeMode("single");
-      }
-    } else {
-      setScopeMode("single");
+  // If the note prop changes (editing existing note), sync content/title/theme/refs
+  useEffect(() => {
+    if (note) {
+      setContent(note.content ?? "");
+      setTitle(note.title ?? "");
+      setTheme(note.noteTheme ?? "yellow");
+      setCrossRefs(note.crossReferences ?? "");
     }
-  }, [verseReference, note]);
+  }, [note]);
 
   const handleSaveClick = () => {
     const trimmed = content.trim();
     if (!trimmed) return;
 
-    if (scopeMode === "range" && enableRange && !wordText) {
+    let rangeOpt: { startVerse: number; endVerse: number } | undefined;
+
+    if (scopeMode === "range" && enableRange) {
       const start = Math.min(startVerse, endVerse);
       const end = Math.max(startVerse, endVerse);
-      onSave(trimmed, { startVerse: start, endVerse: end });
-    } else {
-      onSave(trimmed);
+      rangeOpt = { startVerse: start, endVerse: end };
     }
+
+    onSave(trimmed, {
+      ...(rangeOpt ? { range: rangeOpt } : {}),
+      theme,
+      crossReferences: crossRefs,
+      title: title.trim() || undefined,
+    });
   };
 
   const disableScopeControls = !enableRange;
 
-  // When user stops resizing the textarea, capture its height
-  const handleResizeStop = (
-    e: React.MouseEvent<HTMLTextAreaElement> | React.TouchEvent<HTMLTextAreaElement>
-  ) => {
-    const target = e.currentTarget;
-    const newHeight = target.offsetHeight;
-    if (newHeight > 0) {
-      setEditorHeight(newHeight);
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(EDITOR_HEIGHT_KEY, String(newHeight));
-      }
-    }
-  };
+  // theme → small color dots
+  const themeOptions: { id: NoteTheme; label: string; color: string }[] = [
+    { id: "yellow", label: "Yellow", color: "bg-amber-500" },
+    { id: "blue", label: "Blue", color: "bg-sky-500" },
+    { id: "green", label: "Green", color: "bg-emerald-500" },
+    { id: "purple", label: "Purple", color: "bg-violet-500" },
+    { id: "pink", label: "Pink", color: "bg-rose-500" },
+    { id: "gray", label: "Gray", color: "bg-slate-500" },
+  ];
 
   return (
     <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
-      {/* Header row */}
-      <div className="flex items-center justify-between mb-2">
+      {/* Header row: title + verse reference + wordText */}
+      <div className="flex items-start justify-between mb-2 gap-2">
         <div className="text-xs text-muted-foreground">
-          {verseReference}
+          <div className="font-semibold">
+            {title ? `${title} · ${verseReference}` : verseReference}
+          </div>
           {wordText && (
-            <>
-              {" "}
-              · <span className="italic">“{wordText}”</span>
-            </>
+            <div className="mt-0.5">
+              <span className="italic text-[11px]">
+                Word: “{wordText}”
+              </span>
+            </div>
           )}
         </div>
         <button
@@ -152,6 +146,15 @@ export function NoteEditor({
           <X className="h-3 w-3" />
         </button>
       </div>
+
+      {/* Title input */}
+      <input
+        type="text"
+        className="w-full mb-2 px-2 py-1 border border-border rounded text-sm bg-background"
+        placeholder="Title (optional)"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+      />
 
       {/* Scope controls – hidden for word notes or when enableRange=false */}
       {!disableScopeControls && !wordText && (
@@ -212,17 +215,44 @@ export function NoteEditor({
         </div>
       )}
 
-      {/* Textarea */}
+      {/* Theme + cross refs */}
+      <div className="mb-2 flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <span>Note color:</span>
+          <div className="flex items-center gap-1.5">
+            {themeOptions.map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setTheme(opt.id)}
+                className={`h-4 w-4 rounded-full border border-border flex items-center justify-center ${
+                  theme === opt.id ? "ring-2 ring-primary" : ""
+                }`}
+              >
+                <span className={`h-2.5 w-2.5 rounded-full ${opt.color}`} />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex-1 min-w-[140px]">
+          <input
+            type="text"
+            className="w-full px-2 py-1 border border-border rounded text-[11px] bg-background"
+            placeholder="Cross references (e.g. John 15:1–5; Rom 6)"
+            value={crossRefs}
+            onChange={(e) => setCrossRefs(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {/* Textarea – taller by default */}
       <Textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
-        // taller default if no saved height, otherwise use saved px
-        rows={editorHeight ? undefined : 8}
-        style={editorHeight ? { height: editorHeight } : undefined}
+        rows={6}
         placeholder="Write your note…"
-        className="mb-2 text-sm resize-y min-h-[150px]"
-        onMouseUp={handleResizeStop}
-        onTouchEnd={handleResizeStop}
+        className="mb-2 text-sm"
       />
 
       {/* Actions */}
