@@ -107,34 +107,15 @@ const NT_BOOK_CHAPTERS = [
   { book: "Revelation", chapters: 22 },
 ];
 
-// Theme → container & verse background styles
-const noteThemeStyles: Record<NoteTheme, { container: string; verse: string }> =
-  {
-    yellow: {
-      container: "border-amber-300/70 bg-amber-50/70",
-      verse: "bg-amber-50/70",
-    },
-    blue: {
-      container: "border-sky-300/70 bg-sky-50/70",
-      verse: "bg-sky-50/70",
-    },
-    green: {
-      container: "border-emerald-300/70 bg-emerald-50/70",
-      verse: "bg-emerald-50/70",
-    },
-    purple: {
-      container: "border-violet-300/70 bg-violet-50/70",
-      verse: "bg-violet-50/70",
-    },
-    pink: {
-      container: "border-rose-300/70 bg-rose-50/70",
-      verse: "bg-rose-50/70",
-    },
-    gray: {
-      container: "border-slate-300/70 bg-slate-50/70",
-      verse: "bg-slate-50/70",
-    },
-  };
+// Theme → border accent classes (no hard light backgrounds; works in dark mode)
+const noteThemeBorderClasses: Record<NoteTheme, string> = {
+  yellow: "border-amber-500/70",
+  blue: "border-sky-500/70",
+  green: "border-emerald-500/70",
+  purple: "border-violet-500/70",
+  pink: "border-rose-500/70",
+  gray: "border-slate-500/70",
+};
 
 export function BibleReader({
   book,
@@ -679,7 +660,7 @@ export function BibleReader({
             </div>
 
             {/* Selected verse with highlighted word (always visible) */}
-            <div className="rounded-xl bg-background/95 border px-4 py-3 md:px-5 md:py-4 shadow-sm">
+            <div className="rounded-xl bg-card border px-4 py-3 md:px-5 md:py-4 shadow-sm">
               <div className="text-[11px] md:text-xs font-mono text-primary/80 mb-1">
                 {selectedStrong.verseReference}
               </div>
@@ -733,7 +714,7 @@ export function BibleReader({
                         key={`${occ.verseId}-${occ.matchText}-${occ.reference}`}
                         type="button"
                         onClick={() => handleJumpToOccurrence(occ)}
-                        className="w-full text-left rounded-lg bg-background/80 px-3 py-3 md:px-4 md:py-3 hover:bg-accent/70 hover:shadow-sm transition-colors"
+                        className="w-full text-left rounded-lg bg-card px-3 py-3 md:px-4 md:py-3 hover:bg-accent/70 hover:shadow-sm transition-colors"
                       >
                         <div className="text-[11px] md:text-xs font-mono text-primary mb-1">
                           {occ.reference}
@@ -809,7 +790,7 @@ export function BibleReader({
                   : `${groupedVerses[0].book} ${groupedVerses[0].chapter}:${start}-${end}`;
 
               const theme: NoteTheme = rangeNote.noteTheme ?? "yellow";
-              const themeStyle = noteThemeStyles[theme];
+              const borderClass = noteThemeBorderClasses[theme];
 
               // Any word-level notes belonging to verses in this group
               const groupWordNotes = notes.filter(
@@ -821,10 +802,10 @@ export function BibleReader({
               return (
                 <div
                   key={`range-${rangeNote.id}`}
-                  className={`md:flex md:items-start md:gap-6 mb-6 rounded-lg border px-3 py-3 md:px-4 md:py-4 ${themeStyle.container}`}
+                  className={`md:flex md:items-start md:gap-6 mb-6 rounded-lg border bg-card px-3 py-3 md:px-4 md:py-4 shadow-sm ${borderClass}`}
                 >
                   {/* LEFT: all verses in the range */}
-                  <div className={`flex-1 space-y-2 ${themeStyle.verse}`}>
+                  <div className="flex-1 space-y-2">
                     {groupedVerses.map((v) => {
                       const verseHighlight = highlights.find(
                         (h) =>
@@ -1021,12 +1002,12 @@ export function BibleReader({
             const verseTheme: NoteTheme | null = verseHasNote
               ? verseNotes[0].noteTheme ?? "yellow"
               : null;
-            const verseThemeStyle = verseTheme
-              ? noteThemeStyles[verseTheme]
-              : null;
+            const verseBorderClass = verseTheme
+              ? noteThemeBorderClasses[verseTheme]
+              : "";
 
-            const rowContainerClass = verseHasNote && verseThemeStyle
-              ? `md:flex md:items-start md:gap-6 mb-6 rounded-lg border px-3 py-3 md:px-4 md:py-4 ${verseThemeStyle.container}`
+            const rowContainerClass = verseHasNote
+              ? `md:flex md:items-start md:gap-6 mb-6 rounded-lg border bg-card px-3 py-3 md:px-4 md:py-4 shadow-sm ${verseBorderClass}`
               : "md:flex md:items-start md:gap-6 mb-6";
 
             return (
@@ -1036,11 +1017,7 @@ export function BibleReader({
                 className={rowContainerClass}
               >
                 {/* Left: verse text */}
-                <div
-                  className={
-                    verseThemeStyle ? `flex-1 ${verseThemeStyle.verse}` : "flex-1"
-                  }
-                >
+                <div className="flex-1">
                   <VerseDisplay
                     verse={verse}
                     highlight={verseHighlight}
