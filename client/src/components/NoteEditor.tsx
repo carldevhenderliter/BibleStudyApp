@@ -4,8 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { X, Trash2 } from "lucide-react";
 
+interface NoteWithRange extends Note {
+  startVerse?: number;
+  endVerse?: number;
+}
+
 interface NoteEditorProps {
-  note?: Note;
+  note?: NoteWithRange;
   verseId: string;
   verseReference: string;
   wordText?: string;
@@ -63,12 +68,17 @@ export function NoteEditor({
     }
 
     // If editing an existing note that already has a range, prefer that
-    const anyNote = note as Note & { startVerse?: number; endVerse?: number } | undefined;
-    if (anyNote && typeof anyNote.startVerse === "number" && typeof anyNote.endVerse === "number") {
-      setStartVerse(anyNote.startVerse);
-      setEndVerse(anyNote.endVerse);
-      if (anyNote.startVerse !== anyNote.endVerse) {
+    if (
+      note &&
+      typeof note.startVerse === "number" &&
+      typeof note.endVerse === "number"
+    ) {
+      setStartVerse(note.startVerse);
+      setEndVerse(note.endVerse);
+      if (note.startVerse !== note.endVerse) {
         setScopeMode("range");
+      } else {
+        setScopeMode("single");
       }
     } else {
       setScopeMode("single");
