@@ -270,7 +270,7 @@ export function BibleReader({
     const updatedNotes = [...notes, newNote];
     setNotes(updatedNotes);
     localStorage.setItem("bible-notes", JSON.stringify(updatedNotes));
-    setAddingNote(null);
+    setAddingNote(null); // ✅ close editor
   };
 
   const handleDeleteNote = (noteId: string) => {
@@ -341,7 +341,7 @@ export function BibleReader({
       const updatedNotes = [...notes, newNote];
       setNotes(updatedNotes);
       localStorage.setItem("bible-notes", JSON.stringify(updatedNotes));
-      setAddingNote(null);
+      setAddingNote(null); // ✅ close editor
     }
   };
 
@@ -549,7 +549,7 @@ export function BibleReader({
             </p>
           </div>
 
-          {/* Search input (wired later) */}
+          {/* Search input (for future search) */}
           <div className="w-full max-w-xs md:max-w-sm">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 h-4 w-4 pointer-events-none" />
@@ -690,6 +690,7 @@ export function BibleReader({
               const rn = n as RangeNote;
               const anchorVerse = verses.find((v) => v.id === n.verseId);
               if (!anchorVerse) return false;
+
               if (
                 anchorVerse.book !== verse.book ||
                 anchorVerse.chapter !== verse.chapter
@@ -707,11 +708,10 @@ export function BibleReader({
               return verseNum >= start && verseNum <= end;
             });
 
-            // Notes anchored exactly to this verse (single or range)
+            // Notes anchored exactly to this verse (single or multi-verse)
             const verseNotes = notes.filter(
               (n) =>
-                n.wordIndex === undefined &&
-                n.verseId === verse.id
+                n.wordIndex === undefined && n.verseId === verse.id
             );
 
             // Word-level notes for this verse
@@ -830,7 +830,7 @@ export function BibleReader({
                           onCancel={() => {}}
                         />
                       );
-                    )}
+                    })}
 
                     {/* Word-level notes */}
                     {wordNotes.map((note) => (
@@ -847,7 +847,7 @@ export function BibleReader({
                         onDelete={() => handleDeleteNote(note.id)}
                         onCancel={() => {}}
                       />
-                    )}
+                    ))}
 
                     {/* Active Note Editor (new note) */}
                     {addingNote?.verseId === verse.id && (
@@ -864,7 +864,7 @@ export function BibleReader({
                             // verse note (optional range)
                             handleSaveNote(content, range);
                           }
-                          setAddingNote(null);
+                          setAddingNote(null); // ✅ ensure editor closes
                         }}
                         onDelete={() => {
                           if (addingNote.wordIndex !== undefined) {
