@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Note } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { X, Trash2 } from "lucide-react";
+import { X, Trash2, Pencil } from "lucide-react";
 
 /**
  * These should match the types used in BibleReader.
@@ -52,6 +52,9 @@ export function NoteEditor({
   const [theme, setTheme] = useState<NoteTheme>(note?.noteTheme ?? "yellow");
   const [crossRefs, setCrossRefs] = useState(note?.crossReferences ?? "");
 
+  // collapsed = read-only "note" view
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(!!note);
+
   // scope: this verse only vs range of verses within the same chapter
   const [scopeMode, setScopeMode] = useState<"single" | "range">("single");
   const [startVerse, setStartVerse] = useState<number>(1);
@@ -87,6 +90,10 @@ export function NoteEditor({
       setTitle(note.title ?? "");
       setTheme(note.noteTheme ?? "yellow");
       setCrossRefs(note.crossReferences ?? "");
+      setIsCollapsed(true); // existing note: show collapsed by default
+    } else {
+      // new note: open editor
+      setIsCollapsed(false);
     }
   }, [note]);
 
@@ -102,7 +109,6 @@ export function NoteEditor({
       rangeOpt = { startVerse: start, endVerse: end };
     }
 
-    // 🔐 Actually submit the note
     onSave(trimmed, {
       ...(rangeOpt ? { range: rangeOpt } : {}),
       theme,
@@ -110,17 +116,18 @@ export function NoteEditor({
       title: title.trim() || undefined,
     });
 
-    // ✅ IMPORTANT FIX:
-    // If this is a *new* note (no `note` prop), close the editor UI
-    // so it feels "submitted". For existing notes we leave it open.
-    if (!note) {
+    if (note) {
+      // Editing existing note: stay mounted but collapse to "note view"
+      setIsCollapsed(true);
+    } else {
+      // New note: parent will create actual note + remove this editor
       onCancel();
     }
   };
 
   const disableScopeControls = !enableRange;
 
-  // theme → small color dots
+  // theme → small color dots (just for editor mode)
   const themeOptions: { id: NoteTheme; label: string; color: string }[] = [
     { id: "yellow", label: "Yellow", color: "bg-amber-500" },
     { id: "blue", label: "Blue", color: "bg-sky-500" },
@@ -130,6 +137,62 @@ export function NoteEditor({
     { id: "gray", label: "Gray", color: "bg-slate-500" },
   ];
 
+  /**
+   * COLLAPSED MODE – read-only note card
+   */
+  if (isCollapsed && note) {
+    return (
+      <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
+        <div className="flex items-start justify-between gap-2 mb-1.5">
+          <div className="text-xs text-muted-foreground">
+            <div className="font-semibold">
+              {note.title ? `${note.title} · ${verseReference}` : verseReference}
+            </div>
+            {wordText && (
+              <div className="mt-0.5 italic text-[11px]">
+                Word: “{wordText}”
+              </div>
+            )}
+            {note.crossReferences && note.crossReferences.trim() && (
+              <div className="mt-0.5 text-[11px]">
+                <span className="font-medium">Cross refs: </span>
+                {note.crossReferences}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1">
+            {onDelete && (
+              <button
+                type="button"
+                onClick={onDelete}
+                className="text-[11px] text-destructive hover:text-destructive hover:underline flex items-center gap-1"
+              >
+                <Trash2 className="h-3 w-3" />
+                Delete
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsCollapsed(false)}
+              className="text-[11px] text-muted-foreground hover:text-primary hover:underline flex items-center gap-1"
+            >
+              <Pencil className="h-3 w-3" />
+              Edit
+            </button>
+          </div>
+        </div>
+
+        <div className="text-sm whitespace-pre-wrap">
+          {note.content}
+        </div>
+      </div>
+    );
+  }
+
+  /**
+   * EDITOR MODE
+   */
   return (
     <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
       {/* Header row: title + verse reference + wordText */}
