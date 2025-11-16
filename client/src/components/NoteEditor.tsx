@@ -155,30 +155,34 @@ export function NoteEditor({
     { id: "gray", label: "Gray", color: "bg-slate-500" },
   ];
 
+  // Helper: split crossRefs string into individual references
+  const getCrossRefList = (value: string) =>
+    value
+      .split(/[;,]/)
+      .map((v) => v.trim())
+      .filter((v) => v.length > 0);
+
   /**
    * COLLAPSED MODE – read-only note card
    */
   if (isCollapsed && note) {
+    const crossRefList = getCrossRefList(note.crossReferences ?? "");
+
     return (
       <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
-        {/* Top: title + selected verses */}
+        {/* Top: title + selected verses (just text) */}
         <div className="flex items-start justify-between gap-2 mb-1.5">
           <div className="space-y-0.5">
             {note.noteTitle && (
-              <div className="font-semibold text-sm">
+              <div className="font-semibold text-sm md:text-base tracking-tight">
                 {note.noteTitle}
               </div>
             )}
 
-            <button
-              type="button"
-              className="text-[11px] text-primary hover:underline cursor-pointer"
-              onClick={() => {
-                // TODO: navigate to the verse referenced by `verseReference`
-              }}
-            >
+            {/* Selected verses as plain text */}
+            <div className="text-[11px] text-muted-foreground">
               {verseReference}
-            </button>
+            </div>
 
             {wordText && (
               <div className="italic text-[11px] text-muted-foreground">
@@ -205,11 +209,25 @@ export function NoteEditor({
           {note.content}
         </div>
 
-        {/* Bottom: cross references */}
-        {note.crossReferences && note.crossReferences.trim() && (
+        {/* Bottom: cross references (clickable chips/links) */}
+        {crossRefList.length > 0 && (
           <div className="mt-1 text-[11px] text-muted-foreground">
-            <span className="font-medium">Cross refs: </span>
-            {note.crossReferences}
+            <span className="font-medium mr-1">Cross refs:</span>
+            <div className="inline-flex flex-wrap gap-1">
+              {crossRefList.map((ref) => (
+                <button
+                  key={ref}
+                  type="button"
+                  className="px-1.5 py-0.5 rounded-full bg-accent/60 text-primary text-[11px] hover:bg-accent hover:underline"
+                  onClick={() => {
+                    // TODO: navigate to the verse for `ref`
+                    // console.log("Cross-ref clicked:", ref);
+                  }}
+                >
+                  {ref}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -219,28 +237,26 @@ export function NoteEditor({
   /**
    * EDITOR MODE
    */
+  const crossRefPreviewList = getCrossRefList(crossRefs);
+
   return (
     <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
-      {/* Header row: title + verse reference + close */}
+      {/* Header row: title + verse reference text + close */}
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex-1 space-y-1">
+          {/* Title input – more prominent */}
           <input
             type="text"
-            className="w-full px-2 py-1 border border-border rounded text-xs bg-background"
+            className="w-full px-2 py-1 border border-border rounded text-xs bg-background font-semibold"
             placeholder="Title (optional)"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
 
-          <button
-            type="button"
-            className="text-[11px] text-primary hover:underline cursor-pointer"
-            onClick={() => {
-              // TODO: navigate to the verse referenced by `verseReference`
-            }}
-          >
+          {/* Selected verses as text (not a button) */}
+          <div className="text-[11px] text-muted-foreground">
             {verseReference}
-          </button>
+          </div>
 
           {wordText && (
             <div className="italic text-[11px] text-muted-foreground">
@@ -347,11 +363,9 @@ export function NoteEditor({
         className="mb-2 text-sm resize-y"
         style={editorHeight ? { height: editorHeight } : undefined}
         onMouseUp={(e) => {
-          // when user finishes resizing with mouse
           setEditorHeight(e.currentTarget.offsetHeight);
         }}
         onTouchEnd={(e) => {
-          // when user resizes on touch devices
           setEditorHeight(e.currentTarget.offsetHeight);
         }}
       />
@@ -391,8 +405,8 @@ export function NoteEditor({
         </div>
       </div>
 
-      {/* Bottom: cross references */}
-      <div className="mt-2">
+      {/* Bottom: cross references input + preview as clickable chips */}
+      <div className="mt-2 space-y-1">
         <input
           type="text"
           className="w-full px-2 py-1 border border-border rounded text-[11px] bg-background"
@@ -400,6 +414,26 @@ export function NoteEditor({
           value={crossRefs}
           onChange={(e) => setCrossRefs(e.target.value)}
         />
+
+        {crossRefPreviewList.length > 0 && (
+          <div className="text-[11px] text-muted-foreground">
+            <span className="font-medium mr-1">Links:</span>
+            <div className="inline-flex flex-wrap gap-1">
+              {crossRefPreviewList.map((ref) => (
+                <button
+                  key={ref}
+                  type="button"
+                  className="px-1.5 py-0.5 rounded-full bg-accent/60 text-primary text-[11px] hover:bg-accent hover:underline"
+                  onClick={() => {
+                    // TODO: navigate to verse for `ref`
+                  }}
+                >
+                  {ref}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
