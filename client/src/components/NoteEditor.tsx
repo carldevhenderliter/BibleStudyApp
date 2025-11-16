@@ -102,12 +102,20 @@ export function NoteEditor({
       rangeOpt = { startVerse: start, endVerse: end };
     }
 
+    // 🔐 Actually submit the note
     onSave(trimmed, {
       ...(rangeOpt ? { range: rangeOpt } : {}),
       theme,
       crossReferences: crossRefs,
       title: title.trim() || undefined,
     });
+
+    // ✅ IMPORTANT FIX:
+    // If this is a *new* note (no `note` prop), close the editor UI
+    // so it feels "submitted". For existing notes we leave it open.
+    if (!note) {
+      onCancel();
+    }
   };
 
   const disableScopeControls = !enableRange;
