@@ -51,14 +51,14 @@ type NoteSaveOptions = {
 };
 
 /**
- * Range-aware note: we extend Note at runtime with optional range + theme + title fields.
+ * Range-aware note: we extend Note at runtime with optional range + theme fields.
  */
 type RangeNote = Note & {
   startVerse?: number;
   endVerse?: number;
   noteTheme?: NoteTheme;
   crossReferences?: string;
-  title?: string;
+  noteTitle?: string;
 };
 
 type SelectedStrong = {
@@ -290,7 +290,7 @@ export function BibleReader({
       endVerse,
       noteTheme: theme,
       crossReferences: options?.crossReferences,
-      title: options?.title,
+      noteTitle: options?.title ?? "",
     };
 
     const updatedNotes = [...notes, newNote];
@@ -310,29 +310,30 @@ export function BibleReader({
     content: string,
     options?: NoteSaveOptions
   ) => {
-    const updatedNotes = notes.map((n) =>
-      n.id === noteId
-        ? {
-            ...n,
-            content,
-            wordIndex:
-              typeof n.wordIndex === "number"
-                ? n.wordIndex
-                : typeof n.wordIndex === "string"
-                ? parseInt(n.wordIndex, 10)
-                : undefined,
-            noteTheme: options?.theme ?? n.noteTheme ?? "yellow",
-            crossReferences:
-              options?.crossReferences !== undefined
-                ? options.crossReferences
-                : n.crossReferences,
-            title:
-              options?.title !== undefined
-                ? options.title
-                : n.title,
-          }
-        : n
-    );
+    const updatedNotes = notes.map((n) => {
+      if (n.id !== noteId) return n;
+
+      const current = n as RangeNote;
+
+      return {
+        ...n,
+        content,
+        wordIndex:
+          typeof n.wordIndex === "number"
+            ? n.wordIndex
+            : typeof n.wordIndex === "string"
+            ? parseInt(n.wordIndex, 10)
+            : undefined,
+        noteTheme: options?.theme ?? current.noteTheme ?? "yellow",
+        crossReferences:
+          options?.crossReferences !== undefined
+            ? options.crossReferences
+            : current.crossReferences,
+        noteTitle:
+          options?.title !== undefined ? options.title : current.noteTitle,
+      } as RangeNote;
+    });
+
     setNotes(updatedNotes);
     localStorage.setItem("bible-notes", JSON.stringify(updatedNotes));
   };
@@ -378,7 +379,6 @@ export function BibleReader({
         crossReferences: options?.crossReferences,
         title: options?.title,
       });
-      setAddingNote(null);
     } else {
       const newNote: RangeNote = {
         id: `note-${addingNote.verseId}-word-${wordIndex}-${Date.now()}`,
@@ -389,7 +389,7 @@ export function BibleReader({
         wordText: addingNote.wordText,
         noteTheme: theme,
         crossReferences: options?.crossReferences,
-        title: options?.title,
+        noteTitle: options?.title ?? "",
       };
 
       const updatedNotes = [...notes, newNote];
@@ -858,7 +858,11 @@ export function BibleReader({
                                 handleAddWordNote(v.id, wordIndex, wordText)
                               }
                               onSaveWordNote={(wordIndex, content, options) =>
-                                handleSaveWordNote(wordIndex, content, options)
+                                handleSaveWordNote(
+                                  wordIndex,
+                                  content,
+                                  options
+                                )
                               }
                               onCancelWordNote={handleCancelWordNote}
                               onHighlightWord={(
@@ -905,7 +909,7 @@ export function BibleReader({
                         note={rangeNote}
                         verseId={rangeNote.verseId}
                         verseReference={rangeRef}
-                        enableRange={false} // range is already set; editing only changes content/theme/refs
+                        enableRange={false} // range is already set; editing only changes content/theme/refs/title
                         onSave={(content, opts) =>
                           handleUpdateNote(rangeNote.id, content, {
                             theme: opts?.theme,
@@ -1156,7 +1160,7 @@ export function BibleReader({
                               opts
                             );
                           } else {
-                            // verse-level note: optionally range + theme + refs + title
+                            // verse-level note: optionally range + theme + title + crossRefs
                             handleSaveNote(content, opts);
                           }
                           setAddingNote(null);
