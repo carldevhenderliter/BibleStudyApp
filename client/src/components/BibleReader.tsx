@@ -41,22 +41,13 @@ type AddingNote = {
   wordText?: string;
 };
 
-type NoteTheme = "yellow" | "blue" | "green" | "purple" | "pink" | "gray";
-
-type NoteSaveOptions = {
-  range?: { startVerse: number; endVerse: number };
-  theme?: NoteTheme;
-  crossReferences?: string;
-};
-
 /**
- * Range-aware note: we extend Note at runtime with optional range + theme fields.
+ * Range-aware note: we extend Note at runtime with optional range fields.
+ * These are stored in localStorage along with other note data.
  */
 type RangeNote = Note & {
   startVerse?: number;
   endVerse?: number;
-  noteTheme?: NoteTheme;
-  crossReferences?: string;
 };
 
 type SelectedStrong = {
@@ -106,16 +97,6 @@ const NT_BOOK_CHAPTERS = [
   { book: "Jude", chapters: 1 },
   { book: "Revelation", chapters: 22 },
 ];
-
-// Theme → border accent classes (no hard light backgrounds; works in dark mode)
-const noteThemeBorderClasses: Record<NoteTheme, string> = {
-  yellow: "border-amber-500/70",
-  blue: "border-sky-500/70",
-  green: "border-emerald-500/70",
-  purple: "border-violet-500/70",
-  pink: "border-rose-500/70",
-  gray: "border-slate-500/70",
-};
 
 export function BibleReader({
   book,
@@ -250,7 +231,10 @@ export function BibleReader({
    * If range is provided, attach that range to a single note object,
    * anchored at the first verse in the range.
    */
-  const handleSaveNote = (content: string, options?: NoteSaveOptions) => {
+  const handleSaveNote = (
+    content: string,
+    range?: { startVerse: number; endVerse: number }
+  ) => {
     if (!addingNote) return;
 
     const baseVerse = verses.find((v) => v.id === addingNote.verseId);
@@ -261,9 +245,9 @@ export function BibleReader({
     let startVerse = baseVerse.verse;
     let endVerse = baseVerse.verse;
 
-    if (options?.range) {
-      startVerse = Math.min(options.range.startVerse, options.range.endVerse);
-      endVerse = Math.max(options.range.startVerse, options.range.endVerse);
+    if (range) {
+      startVerse = Math.min(range.startVerse, range.endVerse);
+      endVerse = Math.max(range.startVerse, range.endVerse);
     }
 
     // Anchor note to the first verse in the range
@@ -275,8 +259,6 @@ export function BibleReader({
           v.verse === startVerse
       ) ?? baseVerse;
 
-    const theme: NoteTheme = options?.theme ?? "yellow";
-
     const newNote: RangeNote = {
       id: `note-${anchorVerse.id}-${timestamp}`,
       verseId: anchorVerse.id,
@@ -286,8 +268,6 @@ export function BibleReader({
       wordText: undefined,
       startVerse,
       endVerse,
-      noteTheme: theme,
-      crossReferences: options?.crossReferences,
     };
 
     const updatedNotes = [...notes, newNote];
@@ -305,27 +285,29 @@ export function BibleReader({
   const handleUpdateNote = (
     noteId: string,
     content: string,
-    options?: NoteSaveOptions
+    range?: { startVerse: number; endVerse: number }
   ) => {
-    const updatedNotes = notes.map((n) =>
-      n.id === noteId
-        ? {
-            ...n,
-            content,
-            wordIndex:
-              typeof n.wordIndex === "number"
-                ? n.wordIndex
-                : typeof n.wordIndex === "string"
-                ? parseInt(n.wordIndex, 10)
-                : undefined,
-            noteTheme: options?.theme ?? n.noteTheme ?? "yellow",
-            crossReferences:
-              options?.crossReferences !== undefined
-                ? options.crossReferences
-                : n.crossReferences,
-          }
-        : n
-    );
+    const updatedNotes = notes.map((n) => {
+      if (n.id !== noteId) return n;
+      const updated: RangeNote = {
+        ...n,
+        content,
+        wordIndex:
+          typeof n.wordIndex === "number"
+            ? n.wordIndex
+            : typeof n.wordIndex === "string"
+            ? parseInt(n.wordIndex, 10)
+            : undefined,
+      };
+
+      if (range) {
+        updated.startVerse = Math.min(range.startVerse, range.endVerse);
+        updated.endVerse = Math.max(range.startVerse, range.endVerse);
+      }
+
+      return updated;
+    });
+
     setNotes(updatedNotes);
     localStorage.setItem("bible-notes", JSON.stringify(updatedNotes));
   };
@@ -348,14 +330,9 @@ export function BibleReader({
 
   /**
    * Save a *word-level* note.
-   * These always apply to a single verse, no range,
-   * but still can have theme + crossReferences.
+   * These always apply to a single verse, no range.
    */
-  const handleSaveWordNote = (
-    wordIndex: number,
-    content: string,
-    options?: NoteSaveOptions
-  ) => {
+  const handleSaveWordNote = (wordIndex: number, content: string) => {
     if (!addingNote) return;
 
     const existingNote = notes.find(
@@ -363,13 +340,8 @@ export function BibleReader({
         n.verseId === addingNote.verseId &&
         n.wordIndex === Number(wordIndex)
     );
-    const theme: NoteTheme = options?.theme ?? "yellow";
-
     if (existingNote) {
-      handleUpdateNote(existingNote.id, content, {
-        theme,
-        crossReferences: options?.crossReferences,
-      });
+      handleUpdateNote(existingNote.id, content);
     } else {
       const newNote: RangeNote = {
         id: `note-${addingNote.verseId}-word-${wordIndex}-${Date.now()}`,
@@ -378,8 +350,6 @@ export function BibleReader({
         timestamp: Date.now(),
         wordIndex: Number(wordIndex),
         wordText: addingNote.wordText,
-        noteTheme: theme,
-        crossReferences: options?.crossReferences,
       };
 
       const updatedNotes = [...notes, newNote];
@@ -576,7 +546,7 @@ export function BibleReader({
     setIsScanningOccurrences(false);
   };
 
-  // 🔗 Build range groups: one sticky note + one big verse block per range
+  // 🔗 Build range groups: one note + one big verse block per range
   const rangeNoteMap = new Map<
     string,
     { note: RangeNote; verses: BibleVerseWithTokens[] }
@@ -674,9 +644,7 @@ export function BibleReader({
 
             {/* Definition: only visible when occurrences are HIDDEN */}
             {!showOccurrences && (
-              <StrongDefinitionInline
-                strongNumber={selectedStrong.strongNumber}
-              />
+              <StrongDefinitionInline strongNumber={selectedStrong.strongNumber} />
             )}
 
             {/* Occurrences toggle + panel */}
@@ -776,7 +744,7 @@ export function BibleReader({
             const rangeGroup = rangeNoteMap.get(verse.id);
 
             if (rangeGroup) {
-              // 🎯 Range group: one big container for multiple verses + one sticky note panel
+              // 🎯 Range group: one big container for multiple verses + one note panel
               const groupedVerses = rangeGroup.verses;
               const rangeNote = rangeGroup.note;
               const start = rangeNote.startVerse ?? groupedVerses[0].verse;
@@ -789,9 +757,6 @@ export function BibleReader({
                   ? `${groupedVerses[0].book} ${groupedVerses[0].chapter}:${start}`
                   : `${groupedVerses[0].book} ${groupedVerses[0].chapter}:${start}-${end}`;
 
-              const theme: NoteTheme = rangeNote.noteTheme ?? "yellow";
-              const borderClass = noteThemeBorderClasses[theme];
-
               // Any word-level notes belonging to verses in this group
               const groupWordNotes = notes.filter(
                 (n) =>
@@ -802,7 +767,7 @@ export function BibleReader({
               return (
                 <div
                   key={`range-${rangeNote.id}`}
-                  className={`md:flex md:items-start md:gap-6 mb-6 rounded-lg border bg-card px-3 py-3 md:px-4 md:py-4 shadow-sm ${borderClass}`}
+                  className="md:flex md:items-start md:gap-6 mb-6 rounded-lg border bg-card px-3 py-3 md:px-4 md:py-4 shadow-sm"
                 >
                   {/* LEFT: all verses in the range */}
                   <div className="flex-1 space-y-2">
@@ -847,9 +812,7 @@ export function BibleReader({
                               onAddWordNote={(wordIndex, wordText) =>
                                 handleAddWordNote(v.id, wordIndex, wordText)
                               }
-                              onSaveWordNote={(wordIndex, content, options) =>
-                                handleSaveWordNote(wordIndex, content, options)
-                              }
+                              onSaveWordNote={handleSaveWordNote}
                               onCancelWordNote={handleCancelWordNote}
                               onHighlightWord={(
                                 wordIndex,
@@ -887,7 +850,7 @@ export function BibleReader({
                     })}
                   </div>
 
-                  {/* RIGHT: sticky notes column (range note + active editor if in this group) */}
+                  {/* RIGHT: notes column (range note + active editor if in this group) */}
                   {showNotes && (
                     <div className="mt-3 md:mt-0 md:w-72 lg:w-80 space-y-3 md:sticky md:top-20">
                       {/* The single range note for this whole group */}
@@ -895,11 +858,11 @@ export function BibleReader({
                         note={rangeNote}
                         verseId={rangeNote.verseId}
                         verseReference={rangeRef}
-                        enableRange={false} // range is already set; editing only changes content/theme/refs
-                        onSave={(content, opts) =>
+                        enableRange={false} // range already set; editing only content
+                        onSave={(content) =>
                           handleUpdateNote(rangeNote.id, content, {
-                            theme: opts?.theme,
-                            crossReferences: opts?.crossReferences,
+                            startVerse: rangeNote.startVerse ?? start,
+                            endVerse: rangeNote.endVerse ?? end,
                           })
                         }
                         onDelete={() => handleDeleteNote(rangeNote.id)}
@@ -925,17 +888,16 @@ export function BibleReader({
                             verseReference={rangeRef}
                             wordText={addingNote.wordText}
                             enableRange={addingNote.wordIndex === undefined}
-                            onSave={(content, opts) => {
+                            onSave={(content, range) => {
                               if (addingNote.wordIndex !== undefined) {
                                 // word note within this group
                                 handleSaveWordNote(
                                   addingNote.wordIndex,
-                                  content,
-                                  opts
+                                  content
                                 );
                               } else {
-                                // another verse-level note: optionally range + theme + refs
-                                handleSaveNote(content, opts);
+                                // another verse-level note: optionally range
+                                handleSaveNote(content, range);
                               }
                               setAddingNote(null);
                             }}
@@ -998,17 +960,10 @@ export function BibleReader({
             const showWordByWord =
               (showStrongsNumbers || showInterlinear) && hasTokens;
 
-            const verseHasNote = showNotes && verseNotes.length > 0;
-            const verseTheme: NoteTheme | null = verseHasNote
-              ? verseNotes[0].noteTheme ?? "yellow"
-              : null;
-            const verseBorderClass = verseTheme
-              ? noteThemeBorderClasses[verseTheme]
-              : "";
-
-            const rowContainerClass = verseHasNote
-              ? `md:flex md:items-start md:gap-6 mb-6 rounded-lg border bg-card px-3 py-3 md:px-4 md:py-4 shadow-sm ${verseBorderClass}`
-              : "md:flex md:items-start md:gap-6 mb-6";
+            const rowContainerClass =
+              showNotes && verseNotes.length > 0
+                ? "md:flex md:items-start md:gap-6 mb-6 rounded-lg border bg-card px-3 py-3 md:px-4 md:py-4 shadow-sm"
+                : "md:flex md:items-start md:gap-6 mb-6";
 
             return (
               <div
@@ -1031,9 +986,7 @@ export function BibleReader({
                     onAddWordNote={(wordIndex, wordText) =>
                       handleAddWordNote(verse.id, wordIndex, wordText)
                     }
-                    onSaveWordNote={(wordIndex, content, options) =>
-                      handleSaveWordNote(wordIndex, content, options)
-                    }
+                    onSaveWordNote={handleSaveWordNote}
                     onCancelWordNote={handleCancelWordNote}
                     onHighlightWord={(wordIndex, wordText, color) =>
                       handleHighlightWord(
@@ -1087,11 +1040,11 @@ export function BibleReader({
                           note={note}
                           verseId={verse.id}
                           verseReference={rangeRef}
-                          enableRange={false} // already anchored; editing only content/theme/refs
-                          onSave={(content, opts) =>
+                          enableRange={false} // already anchored; editing only content
+                          onSave={(content) =>
                             handleUpdateNote(note.id, content, {
-                              theme: opts?.theme,
-                              crossReferences: opts?.crossReferences,
+                              startVerse: start,
+                              endVerse: end,
                             })
                           }
                           onDelete={() => handleDeleteNote(note.id)}
@@ -1109,11 +1062,8 @@ export function BibleReader({
                         verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
                         wordText={note.wordText}
                         enableRange={false} // word notes apply only to that verse
-                        onSave={(content, opts) =>
-                          handleUpdateNote(note.id, content, {
-                            theme: opts?.theme,
-                            crossReferences: opts?.crossReferences,
-                          })
+                        onSave={(content) =>
+                          handleUpdateNote(note.id, content)
                         }
                         onDelete={() => handleDeleteNote(note.id)}
                         onCancel={() => {}}
@@ -1134,17 +1084,13 @@ export function BibleReader({
                         verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
                         wordText={addingNote.wordText}
                         enableRange={addingNote.wordIndex === undefined}
-                        onSave={(content, opts) => {
+                        onSave={(content, range) => {
                           if (addingNote.wordIndex !== undefined) {
                             // word note: single verse
-                            handleSaveWordNote(
-                              addingNote.wordIndex,
-                              content,
-                              opts
-                            );
+                            handleSaveWordNote(addingNote.wordIndex, content);
                           } else {
                             // verse-level note: optionally range
-                            handleSaveNote(content, opts);
+                            handleSaveNote(content, range);
                           }
                           setAddingNote(null);
                         }}
