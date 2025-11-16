@@ -25,7 +25,7 @@ interface NoteEditorProps {
 
 export function NoteEditor({
   note,
-  verseId, // currently not used, but kept for future flexibility
+  verseId, // kept for future use
   verseReference,
   wordText,
   enableRange = true,
@@ -33,12 +33,15 @@ export function NoteEditor({
   onDelete,
   onCancel,
 }: NoteEditorProps) {
-  const [content, setContent] = useState(note?.content ?? "");
+  const isNew = !note;
 
-  // scope: this verse only vs range of verses within the same chapter
+  const [content, setContent] = useState(note?.content ?? "");
   const [scopeMode, setScopeMode] = useState<"single" | "range">("single");
   const [startVerse, setStartVerse] = useState<number>(1);
   const [endVerse, setEndVerse] = useState<number>(1);
+
+  // Whether we are currently editing
+  const [isEditing, setIsEditing] = useState<boolean>(isNew);
 
   // Parse verse number(s) from something like:
   // "John 3:16" or "John 3:16-18" or "1 Corinthians 13:4-7"
@@ -66,18 +69,25 @@ export function NoteEditor({
       setEndVerse(startNum || 1);
     }
 
-    // If there's already a multi-verse reference (e.g., "3:16-18"),
-    // default into "range" mode when creating a NEW note and range is enabled.
+    // If it's a new note and range is enabled and ref already has a range,
+    // default into "range" mode.
     if (!note && enableRange && !Number.isNaN(endNum) && endNum !== startNum) {
       setScopeMode("range");
     }
   }, [verseReference, note, enableRange]);
 
+  // If parent changes the note prop (e.g., content updated externally),
+  // keep local content in sync when not editing.
+  useEffect(() => {
+    if (!isEditing && note) {
+      setContent(note.content ?? "");
+    }
+  }, [note, isEditing]);
+
   const handleSaveClick = () => {
     const trimmed = content.trim();
     if (!trimmed) return;
 
-    // If range is enabled and selected, return the range, otherwise single-verse
     if (scopeMode === "range" && enableRange) {
       const start = Math.min(startVerse, endVerse);
       const end = Math.max(startVerse, endVerse);
@@ -85,10 +95,74 @@ export function NoteEditor({
     } else {
       onSave(trimmed);
     }
+
+    if (!isNew) {
+      // Existing note: go back to read-only view
+      setIsEditing(false);
+    }
+    // For new notes, BibleReader will unmount this editor (addingNote=null),
+    // and then render a fresh NoteEditor with note=... in read-only mode.
+  };
+
+  const handleCancelClick = () => {
+    if (isNew) {
+      // New note: tell parent to close it entirely
+      onCancel();
+    } else {
+      // Existing note: revert and go back to read-only
+      setIsEditing(false);
+      setContent(note?.content ?? "");
+    }
   };
 
   const disableScopeControls = !enableRange;
 
+  /**
+   * READ-ONLY VIEW (for existing notes when not editing)
+   */
+  if (note && !isEditing) {
+    return (
+      <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs text-muted-foreground">
+            {verseReference}
+            {wordText && (
+              <>
+                {" "}
+                · <span className="italic">“{wordText}”</span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            {onDelete && (
+              <button
+                type="button"
+                onClick={onDelete}
+                className="text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10 rounded px-1 py-0.5 flex items-center gap-1"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsEditing(true)}
+              className="text-[11px] text-muted-foreground hover:text-primary rounded px-2 py-0.5 border border-border hover:border-primary/60"
+            >
+              Edit
+            </button>
+          </div>
+        </div>
+
+        <div className="whitespace-pre-wrap text-sm text-foreground/90">
+          {note.content}
+        </div>
+      </div>
+    );
+  }
+
+  /**
+   * EDITOR VIEW (new notes, or existing notes while editing)
+   */
   return (
     <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
       {/* Header row */}
@@ -104,7 +178,7 @@ export function NoteEditor({
         </div>
         <button
           type="button"
-          onClick={onCancel}
+          onClick={handleCancelClick}
           className="text-xs text-muted-foreground hover:text-foreground"
         >
           <X className="h-3 w-3" />
@@ -198,7 +272,7 @@ export function NoteEditor({
             type="button"
             variant="outline"
             size="sm"
-            onClick={onCancel}
+            onClick={handleCancelClick}
           >
             Cancel
           </Button>
