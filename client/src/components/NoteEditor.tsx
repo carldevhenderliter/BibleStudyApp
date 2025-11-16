@@ -36,15 +36,14 @@ export function NoteEditor({
 }: NoteEditorProps) {
   const [content, setContent] = useState(note?.content ?? "");
 
-  // scope: this verse only vs range of verses within the same chapter
   const [scopeMode, setScopeMode] = useState<"single" | "range">("single");
   const [startVerse, setStartVerse] = useState<number>(1);
   const [endVerse, setEndVerse] = useState<number>(1);
 
-  // Parse verse number from something like "John 3:16" or "John 3:16–18"
+  // Initialize start/end from verseReference (e.g. "John 3:16" or "John 3:16-18")
   useEffect(() => {
     const [, ref] = verseReference.split(" ");
-    const [chapterPart, versePart] = (ref ?? "").split(":");
+    const [, versePart] = (ref ?? "").split(":");
     const verseSegment = versePart ?? "1";
     const [startStr, endStr] = verseSegment.split("-");
 
@@ -79,7 +78,7 @@ export function NoteEditor({
 
   const disableScopeControls = !enableRange;
 
-  // Simple formatting helpers (markdown-ish)
+  // Simple formatting helpers
   const prependIfMissing = (prefix: string) => {
     setContent((prev) => {
       const trimmed = prev.trimStart();
@@ -114,7 +113,7 @@ export function NoteEditor({
 
   return (
     <div className="mt-3 rounded-lg border border-border bg-card px-3 py-3 text-sm shadow-sm">
-      {/* Header row */}
+      {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div className="text-[11px] text-muted-foreground">
           {verseReference}
@@ -134,7 +133,7 @@ export function NoteEditor({
         </button>
       </div>
 
-      {/* Scope controls – hidden for word notes or when enableRange=false */}
+      {/* Scope controls – verse vs range (only for verse notes) */}
       {!disableScopeControls && !wordText && (
         <div className="mb-2">
           <div className="text-[11px] text-muted-foreground mb-1">
