@@ -4,19 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { X, Trash2 } from "lucide-react";
 
-type NoteTheme = "yellow" | "blue" | "green" | "purple" | "pink" | "gray";
-
-type NoteSaveOptions = {
-  range?: { startVerse: number; endVerse: number };
-  theme?: NoteTheme;
-  crossReferences?: string;
-};
-
 type ExtendedNote = Note & {
   startVerse?: number;
   endVerse?: number;
-  noteTheme?: NoteTheme;
-  crossReferences?: string;
 };
 
 interface NoteEditorProps {
@@ -29,61 +19,9 @@ interface NoteEditorProps {
    * For word notes we pass false so it only applies to that single verse.
    */
   enableRange?: boolean;
-  onSave: (content: string, options?: NoteSaveOptions) => void;
+  onSave: (content: string, range?: { startVerse: number; endVerse: number }) => void;
   onDelete?: () => void;
   onCancel: () => void;
-}
-
-const THEME_OPTIONS: { id: NoteTheme; label: string; dotClass: string }[] = [
-  {
-    id: "yellow",
-    label: "Yellow",
-    dotClass: "bg-amber-400 border-amber-500",
-  },
-  {
-    id: "blue",
-    label: "Blue",
-    dotClass: "bg-sky-400 border-sky-500",
-  },
-  {
-    id: "green",
-    label: "Green",
-    dotClass: "bg-emerald-400 border-emerald-500",
-  },
-  {
-    id: "purple",
-    label: "Purple",
-    dotClass: "bg-violet-400 border-violet-500",
-  },
-  {
-    id: "pink",
-    label: "Pink",
-    dotClass: "bg-rose-400 border-rose-500",
-  },
-  {
-    id: "gray",
-    label: "Gray",
-    dotClass: "bg-slate-400 border-slate-500",
-  },
-];
-
-// Just border color; background stays bg-card (theme-aware)
-function themeBorderClasses(theme: NoteTheme) {
-  switch (theme) {
-    case "yellow":
-      return "border-amber-500/70";
-    case "blue":
-      return "border-sky-500/70";
-    case "green":
-      return "border-emerald-500/70";
-    case "purple":
-      return "border-violet-500/70";
-    case "pink":
-      return "border-rose-500/70";
-    case "gray":
-    default:
-      return "border-slate-500/70";
-  }
 }
 
 export function NoteEditor({
@@ -102,14 +40,6 @@ export function NoteEditor({
   const [scopeMode, setScopeMode] = useState<"single" | "range">("single");
   const [startVerse, setStartVerse] = useState<number>(1);
   const [endVerse, setEndVerse] = useState<number>(1);
-
-  const [theme, setTheme] = useState<NoteTheme>(
-    note?.noteTheme ?? "yellow"
-  );
-
-  const [crossRefs, setCrossRefs] = useState<string>(
-    note?.crossReferences ?? ""
-  );
 
   // Parse verse number from something like "John 3:16" or "John 3:16–18"
   useEffect(() => {
@@ -138,23 +68,18 @@ export function NoteEditor({
     const trimmed = content.trim();
     if (!trimmed) return;
 
-    const options: NoteSaveOptions = {
-      theme,
-      crossReferences: crossRefs.trim() || undefined,
-    };
-
     if (scopeMode === "range" && enableRange) {
       const start = Math.min(startVerse, endVerse);
       const end = Math.max(startVerse, endVerse);
-      options.range = { startVerse: start, endVerse: end };
+      onSave(trimmed, { startVerse: start, endVerse: end });
+    } else {
+      onSave(trimmed);
     }
-
-    onSave(trimmed, options);
   };
 
   const disableScopeControls = !enableRange;
 
-  // Simple formatting helpers (markdown-style)
+  // Simple formatting helpers (markdown-ish)
   const prependIfMissing = (prefix: string) => {
     setContent((prev) => {
       const trimmed = prev.trimStart();
@@ -187,12 +112,8 @@ export function NoteEditor({
     });
   };
 
-  const borderClasses = themeBorderClasses(theme);
-
   return (
-    <div
-      className={`mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm ${borderClasses}`}
-    >
+    <div className="mt-3 rounded-lg border border-border bg-card px-3 py-3 text-sm shadow-sm">
       {/* Header row */}
       <div className="flex items-center justify-between mb-2">
         <div className="text-[11px] text-muted-foreground">
@@ -213,87 +134,64 @@ export function NoteEditor({
         </button>
       </div>
 
-      {/* Theme + scope row */}
-      <div className="flex flex-col gap-2 mb-2">
-        {/* Theme picker */}
-        <div className="flex items-center justify-between">
-          <div className="text-[11px] text-muted-foreground">
-            Note color:
+      {/* Scope controls – hidden for word notes or when enableRange=false */}
+      {!disableScopeControls && !wordText && (
+        <div className="mb-2">
+          <div className="text-[11px] text-muted-foreground mb-1">
+            This note applies to:
           </div>
-          <div className="flex items-center gap-1">
-            {THEME_OPTIONS.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => setTheme(opt.id)}
-                className={`h-4 w-4 rounded-full border ${opt.dotClass} transition-transform ${
-                  theme === opt.id ? "ring-2 ring-offset-1 ring-primary scale-110" : ""
-                }`}
-                aria-label={opt.label}
-              />
-            ))}
+          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setScopeMode("single")}
+              className={`px-2 py-1 rounded-full border ${
+                scopeMode === "single"
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:bg-accent/60"
+              }`}
+            >
+              This verse only
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setScopeMode("range")}
+              className={`px-2 py-1 rounded-full border ${
+                scopeMode === "range"
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:bg-accent/60"
+              }`}
+            >
+              Verse range
+            </button>
+
+            {scopeMode === "range" && (
+              <div className="flex items-center gap-1 text-[11px]">
+                <span>vv.</span>
+                <input
+                  type="number"
+                  className="w-12 rounded border border-border bg-background px-1 py-0.5 text-[11px]"
+                  value={startVerse}
+                  min={1}
+                  onChange={(e) =>
+                    setStartVerse(parseInt(e.target.value || "1", 10))
+                  }
+                />
+                <span>–</span>
+                <input
+                  type="number"
+                  className="w-12 rounded border border-border bg-background px-1 py-0.5 text-[11px]"
+                  value={endVerse}
+                  min={1}
+                  onChange={(e) =>
+                    setEndVerse(parseInt(e.target.value || "1", 10))
+                  }
+                />
+              </div>
+            )}
           </div>
         </div>
-
-        {/* Scope controls – hidden for word notes or when enableRange=false */}
-        {!disableScopeControls && !wordText && (
-          <div>
-            <div className="text-[11px] text-muted-foreground mb-1">
-              This note applies to:
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-[11px]">
-              <button
-                type="button"
-                onClick={() => setScopeMode("single")}
-                className={`px-2 py-1 rounded-full border ${
-                  scopeMode === "single"
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground hover:bg-accent/60"
-                }`}
-              >
-                This verse only
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setScopeMode("range")}
-                className={`px-2 py-1 rounded-full border ${
-                  scopeMode === "range"
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground hover:bg-accent/60"
-                }`}
-              >
-                Verse range
-              </button>
-
-              {scopeMode === "range" && (
-                <div className="flex items-center gap-1 text-[11px]">
-                  <span>vv.</span>
-                  <input
-                    type="number"
-                    className="w-12 rounded border border-border bg-background px-1 py-0.5 text-[11px]"
-                    value={startVerse}
-                    min={1}
-                    onChange={(e) =>
-                      setStartVerse(parseInt(e.target.value || "1", 10))
-                    }
-                  />
-                  <span>–</span>
-                  <input
-                    type="number"
-                    className="w-12 rounded border border-border bg-background px-1 py-0.5 text-[11px]"
-                    value={endVerse}
-                    min={1}
-                    onChange={(e) =>
-                      setEndVerse(parseInt(e.target.value || "1", 10))
-                    }
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Formatting toolbar */}
       <div className="flex flex-wrap items-center gap-1 mb-2 text-[11px]">
@@ -340,23 +238,9 @@ export function NoteEditor({
         value={content}
         onChange={(e) => setContent(e.target.value)}
         rows={4}
-        placeholder="Write your note… (You can use headings: #, ##, lists: -, 1., etc.)"
+        placeholder="Write your note…"
         className="mb-2 text-sm"
       />
-
-      {/* Cross references */}
-      <div className="mb-2">
-        <div className="text-[11px] text-muted-foreground mb-1">
-          Cross references (other passages for this lesson)
-        </div>
-        <input
-          type="text"
-          value={crossRefs}
-          onChange={(e) => setCrossRefs(e.target.value)}
-          placeholder="e.g. John 3:16; Romans 5:8"
-          className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
-        />
-      </div>
 
       {/* Actions */}
       <div className="flex justify-between items-center mt-1">
