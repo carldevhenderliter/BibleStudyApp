@@ -38,50 +38,51 @@ const THEME_OPTIONS: { id: NoteTheme; label: string; dotClass: string }[] = [
   {
     id: "yellow",
     label: "Yellow",
-    dotClass: "bg-amber-300 border-amber-400",
+    dotClass: "bg-amber-400 border-amber-500",
   },
   {
     id: "blue",
     label: "Blue",
-    dotClass: "bg-sky-300 border-sky-400",
+    dotClass: "bg-sky-400 border-sky-500",
   },
   {
     id: "green",
     label: "Green",
-    dotClass: "bg-emerald-300 border-emerald-400",
+    dotClass: "bg-emerald-400 border-emerald-500",
   },
   {
     id: "purple",
     label: "Purple",
-    dotClass: "bg-violet-300 border-violet-400",
+    dotClass: "bg-violet-400 border-violet-500",
   },
   {
     id: "pink",
     label: "Pink",
-    dotClass: "bg-rose-300 border-rose-400",
+    dotClass: "bg-rose-400 border-rose-500",
   },
   {
     id: "gray",
     label: "Gray",
-    dotClass: "bg-slate-300 border-slate-400",
+    dotClass: "bg-slate-400 border-slate-500",
   },
 ];
 
-function themeCardClasses(theme: NoteTheme) {
+// Just border color; background stays bg-card (theme-aware)
+function themeBorderClasses(theme: NoteTheme) {
   switch (theme) {
     case "yellow":
-      return "bg-amber-50 border-amber-200";
+      return "border-amber-500/70";
     case "blue":
-      return "bg-sky-50 border-sky-200";
+      return "border-sky-500/70";
     case "green":
-      return "bg-emerald-50 border-emerald-200";
+      return "border-emerald-500/70";
     case "purple":
-      return "bg-violet-50 border-violet-200";
+      return "border-violet-500/70";
     case "pink":
-      return "bg-rose-50 border-rose-200";
+      return "border-rose-500/70";
     case "gray":
     default:
-      return "bg-slate-50 border-slate-200";
+      return "border-slate-500/70";
   }
 }
 
@@ -186,11 +187,11 @@ export function NoteEditor({
     });
   };
 
-  const cardThemeClasses = themeCardClasses(theme);
+  const borderClasses = themeBorderClasses(theme);
 
   return (
     <div
-      className={`mt-3 rounded-lg border px-3 py-3 text-sm shadow-sm ${cardThemeClasses}`}
+      className={`mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm ${borderClasses}`}
     >
       {/* Header row */}
       <div className="flex items-center justify-between mb-2">
@@ -225,9 +226,7 @@ export function NoteEditor({
                 key={opt.id}
                 type="button"
                 onClick={() => setTheme(opt.id)}
-                className={`h-4 w-4 rounded-full border ${
-                  opt.dotClass
-                } transition-transform ${
+                className={`h-4 w-4 rounded-full border ${opt.dotClass} transition-transform ${
                   theme === opt.id ? "ring-2 ring-offset-1 ring-primary scale-110" : ""
                 }`}
                 aria-label={opt.label}
