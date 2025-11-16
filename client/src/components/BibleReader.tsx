@@ -462,7 +462,9 @@ export function BibleReader({
         ? token.strongs
         : [token.strongs];
       if (
-        strongsArray.some((s) => s.toUpperCase().trim() === normalized)
+        strongsArray.some(
+          (s) => s.toUpperCase().trim() === normalized
+        )
       ) {
         matchText = token.english;
         break;
@@ -532,6 +534,9 @@ export function BibleReader({
     setStrongOccurrences(allOccurrences);
     setIsScanningOccurrences(false);
   };
+
+  // Track verses that are already covered by a range note group in this render
+  const coveredByRange = new Set<string>();
 
   return (
     <div className="h-full flex flex-col">
@@ -685,65 +690,48 @@ export function BibleReader({
       {/* MAIN SCROLL AREA */}
       <ScrollArea className="flex-1">
         <div
-          className="max-w-5xl mx-auto px-6 py-8 pb-24"
+          className="max-w-5xl mx-auto px-6 py-8 pb-8"
           style={{ fontSize: `${fontSize}px` }}
         >
+          {verses.length === 0 && (
+            <div className="text-center text-muted-foreground py-12">
+              <p>No verses available for this chapter.</p>
+              <p className="text-sm mt-2">
+                Try selecting a different book or chapter.
+              </p>
+            </div>
+          )}
+
           {verses.map((verse) => {
-            // 📝 Verse-level notes: show only on the *first* verse of their range
-            const verseNotes = notes.filter((n) => {
-              if (n.wordIndex !== undefined) return false;
+            // If this verse is already part of an earlier range group, skip it
+            if (coveredByRange.has(verse.id)) {
+              return null;
+            }
 
-              const anyNote = n as RangeNote;
-              const anchorVerseObj = verses.find((v) => v.id === n.verseId);
-              if (!anchorVerseObj) return false;
+            // All non-word notes anchored to this verse
+            const verseNotes = notes.filter(
+              (n) => n.verseId === verse.id && n.wordIndex === undefined
+            );
 
-              const start =
-                typeof anyNote.startVerse === "number"
-                  ? anyNote.startVerse
-                  : anchorVerseObj.verse;
-              const end =
-                typeof anyNote.endVerse === "number"
-                  ? anyNote.endVerse
-                  : start;
+            // Word-level notes for this verse
+            const wordNotes = notes.filter(
+              (n) => n.verseId === verse.id && n.wordIndex !== undefined
+            );
 
-              // Only render the note once: on the first verse in the range
+            // Split verse-level notes into:
+            //  - range notes (startVerse/endVerse set & end > start)
+            //  - single-verse notes
+            const rangeNotesHere = verseNotes.filter((n) => {
+              const rn = n as RangeNote;
               return (
-                verse.book === anchorVerseObj.book &&
-                verse.chapter === anchorVerseObj.chapter &&
-                verse.verse === start
+                typeof rn.startVerse === "number" &&
+                typeof rn.endVerse === "number" &&
+                rn.endVerse > rn.startVerse
               );
             });
 
-            // 💡 Is this verse anywhere inside any note's range?
-            const isInRangeOfAnyNote = notes.some((n) => {
-              if (n.wordIndex !== undefined) return false;
-
-              const anyNote = n as RangeNote;
-              const anchorVerseObj = verses.find((v) => v.id === n.verseId);
-              if (!anchorVerseObj) return false;
-
-              if (
-                anchorVerseObj.book !== verse.book ||
-                anchorVerseObj.chapter !== verse.chapter
-              ) {
-                return false;
-              }
-
-              const start =
-                typeof anyNote.startVerse === "number"
-                  ? anyNote.startVerse
-                  : anchorVerseObj.verse;
-              const end =
-                typeof anyNote.endVerse === "number"
-                  ? anyNote.endVerse
-                  : start;
-
-              return verse.verse >= start && verse.verse <= end;
-            });
-
-            // word-level notes (only show on their exact verse)
-            const wordNotes = notes.filter(
-              (n) => n.verseId === verse.id && n.wordIndex !== undefined
+            const singleVerseNotes = verseNotes.filter(
+              (n) => !rangeNotesHere.includes(n)
             );
 
             const verseHighlight = highlights.find(
@@ -758,15 +746,222 @@ export function BibleReader({
             const showWordByWord =
               (showStrongsNumbers || showInterlinear) && hasTokens;
 
+            // 🚩 CASE 1: this verse starts one or more RANGE notes
+            if (rangeNotesHere.length > 0) {
+              // Determine the farthest endVerse among all range notes starting here
+              const maxEndVerse = Math.max(
+                ...rangeNotesHere.map((n) => {
+                  const rn = n as RangeNote;
+                  if (typeof rn.endVerse === "number") return rn.endVerse;
+                  if (typeof rn.startVerse === "number") return rn.startVerse;
+                  return verse.verse;
+                })
+              );
+
+              const minStartVerse = Math.min(
+                ...rangeNotesHere.map((n) => {
+                  const rn = n as RangeNote;
+                  if (typeof rn.startVerse === "number") return rn.startVerse;
+                  return verse.verse;
+                })
+              );
+
+              // All verses in this chapter that fall within the range
+              const groupedVerses = verses.filter(
+                (v) =>
+                  v.book === verse.book &&
+                  v.chapter === verse.chapter &&
+                  v.verse >= minStartVerse &&
+                  v.verse <= maxEndVerse
+              );
+
+              // Mark them as "covered" so they won't render again individually
+              groupedVerses.forEach((v) => {
+                if (v.id !== verse.id) {
+                  coveredByRange.add(v.id);
+                }
+              });
+
+              // For the note label: e.g. "John 3:16-18"
+              const rangeLabel =
+                minStartVerse === maxEndVerse
+                  ? `${verse.book} ${verse.chapter}:${minStartVerse}`
+                  : `${verse.book} ${verse.chapter}:${minStartVerse}-${maxEndVerse}`;
+
+              // On which verses does a NEW verse-level note editor belong?
+              const groupVerseIds = new Set(groupedVerses.map((v) => v.id));
+              const isAddingGroupNote =
+                !!addingNote &&
+                addingNote.wordIndex === undefined &&
+                groupVerseIds.has(addingNote.verseId);
+
+              return (
+                <div
+                  key={`group-${verse.id}-${maxEndVerse}`}
+                  className="md:flex md:items-start md:gap-6 mb-6"
+                >
+                  {/* LEFT: all verses in the range */}
+                  <div className="flex-1 space-y-4">
+                    {groupedVerses.map((v) => {
+                      const vHighlight = highlights.find(
+                        (h) => h.verseId === v.id && h.wordIndex === undefined
+                      );
+                      const vWordHighlights = highlights.filter(
+                        (h) => h.verseId === v.id && h.wordIndex !== undefined
+                      );
+                      const vHasTokens =
+                        (v as BibleVerseWithTokens).tokens &&
+                        (v as BibleVerseWithTokens).tokens!.length > 0;
+                      const vShowWordByWord =
+                        (showStrongsNumbers || showInterlinear) && vHasTokens;
+
+                      const vWordNotes = notes.filter(
+                        (n) => n.verseId === v.id && n.wordIndex !== undefined
+                      );
+
+                      return (
+                        <div key={v.id} data-verse-id={v.id}>
+                          <VerseDisplay
+                            verse={v}
+                            highlight={vHighlight}
+                            wordHighlights={vWordHighlights}
+                            showStrongsNumbers={showStrongsNumbers}
+                            showInterlinear={showInterlinear}
+                            showNotes={showNotes}
+                            displayMode={displayMode}
+                            showWordByWord={vShowWordByWord}
+                            onAddNote={() =>
+                              setAddingNote({ verseId: v.id })
+                            }
+                            onAddWordNote={(wordIndex, wordText) =>
+                              handleAddWordNote(v.id, wordIndex, wordText)
+                            }
+                            onSaveWordNote={handleSaveWordNote}
+                            onCancelWordNote={handleCancelWordNote}
+                            onHighlightWord={(wordIndex, wordText, color) =>
+                              handleHighlightWord(
+                                v.id,
+                                wordIndex,
+                                wordText,
+                                color as HighlightColor
+                              )
+                            }
+                            onTextSelect={(text) =>
+                              handleTextSelect(v.id, text)
+                            }
+                            onStrongClick={(strongNumber) =>
+                              handleStrongClick(v.id, strongNumber)
+                            }
+                            wordNotes={vWordNotes}
+                            activeWordNote={
+                              addingNote?.verseId === v.id &&
+                              addingNote.wordIndex !== undefined
+                                ? {
+                                    verseId: addingNote.verseId,
+                                    wordIndex: addingNote.wordIndex,
+                                    wordText: addingNote.wordText,
+                                  }
+                                : null
+                            }
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* RIGHT: grouped notes column */}
+                  {showNotes && (
+                    <div className="mt-3 md:mt-0 md:w-72 lg:w-80 space-y-3">
+                      {/* Range notes (one big container next to all verses) */}
+                      {rangeNotesHere.map((note) => (
+                        <NoteEditor
+                          key={note.id}
+                          note={note}
+                          verseId={verse.id}
+                          verseReference={rangeLabel}
+                          enableRange={false} // keep existing range; don't edit range here
+                          onSave={(content) =>
+                            handleUpdateNote(note.id, content)
+                          }
+                          onDelete={() => handleDeleteNote(note.id)}
+                          onCancel={() => {}}
+                        />
+                      ))}
+
+                      {/* Single-verse notes anchored to this starting verse (if any) */}
+                      {singleVerseNotes.map((note) => (
+                        <NoteEditor
+                          key={note.id}
+                          note={note}
+                          verseId={verse.id}
+                          verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
+                          enableRange={false}
+                          onSave={(content) =>
+                            handleUpdateNote(note.id, content)
+                          }
+                          onDelete={() => handleDeleteNote(note.id)}
+                          onCancel={() => {}}
+                        />
+                      ))}
+
+                      {/* Word-level notes for all verses in the group */}
+                      {groupedVerses.map((v) => {
+                        const vWordNotes = notes.filter(
+                          (n) => n.verseId === v.id && n.wordIndex !== undefined
+                        );
+                        return vWordNotes.map((note) => (
+                          <NoteEditor
+                            key={note.id}
+                            note={note}
+                            verseId={v.id}
+                            verseReference={`${v.book} ${v.chapter}:${v.verse}`}
+                            wordText={note.wordText}
+                            enableRange={false}
+                            onSave={(content) =>
+                              handleUpdateNote(note.id, content)
+                            }
+                            onDelete={() => handleDeleteNote(note.id)}
+                            onCancel={() => {}}
+                          />
+                        ));
+                      })}
+
+                      {/* Active NEW note editor for any verse in this group (verse-range capable) */}
+                      {isAddingGroupNote && (
+                        <NoteEditor
+                          verseId={addingNote!.verseId}
+                          verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
+                          enableRange={true}
+                          onSave={(content, range) => {
+                            if (addingNote!.wordIndex !== undefined) {
+                              // (Shouldn't happen here, but safe)
+                              handleSaveWordNote(
+                                addingNote!.wordIndex,
+                                content
+                              );
+                            } else {
+                              handleSaveNote(content, range);
+                            }
+                            setAddingNote(null);
+                          }}
+                          onDelete={() => {
+                            setAddingNote(null);
+                          }}
+                          onCancel={() => setAddingNote(null)}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            // 🚩 CASE 2: normal single-verse row (no range note starting here)
             return (
               <div
                 key={verse.id}
                 data-verse-id={verse.id}
-                className={`md:flex md:items-start md:gap-6 mb-6 rounded-lg transition-colors ${
-                  isInRangeOfAnyNote
-                    ? "bg-accent/20 border-l-2 border-primary/60 pl-3 md:pl-4"
-                    : ""
-                }`}
+                className="md:flex md:items-start md:gap-6 mb-6"
               >
                 {/* Left: verse text */}
                 <div className="flex-1">
@@ -814,38 +1009,21 @@ export function BibleReader({
                 {/* Right: notes column on desktop, below on mobile */}
                 {showNotes && (
                   <div className="mt-3 md:mt-0 md:w-72 lg:w-80 space-y-3">
-                    {/* Verse-level notes (single note per range) */}
-                    {verseNotes.map((note) => {
-                      const anyNote = note as RangeNote;
-                      const start =
-                        typeof anyNote.startVerse === "number"
-                          ? anyNote.startVerse
-                          : verse.verse;
-                      const end =
-                        typeof anyNote.endVerse === "number"
-                          ? anyNote.endVerse
-                          : start;
-
-                      const rangeRef =
-                        start === end
-                          ? `${verse.book} ${verse.chapter}:${start}`
-                          : `${verse.book} ${verse.chapter}:${start}-${end}`;
-
-                      return (
-                        <NoteEditor
-                          key={note.id}
-                          note={note}
-                          verseId={verse.id}
-                          verseReference={rangeRef}
-                          enableRange={false} // existing note: keep range, but don’t edit it here
-                          onSave={(content) =>
-                            handleUpdateNote(note.id, content)
-                          }
-                          onDelete={() => handleDeleteNote(note.id)}
-                          onCancel={() => {}}
-                        />
-                      );
-                    })}
+                    {/* Verse-level notes (single-verse only here) */}
+                    {singleVerseNotes.map((note) => (
+                      <NoteEditor
+                        key={note.id}
+                        note={note}
+                        verseId={verse.id}
+                        verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
+                        enableRange={false}
+                        onSave={(content) =>
+                          handleUpdateNote(note.id, content)
+                        }
+                        onDelete={() => handleDeleteNote(note.id)}
+                        onCancel={() => {}}
+                      />
+                    ))}
 
                     {/* Word-level notes */}
                     {wordNotes.map((note) => (
@@ -855,65 +1033,37 @@ export function BibleReader({
                         verseId={verse.id}
                         verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
                         wordText={note.wordText}
-                        enableRange={false} // word notes apply only to that verse
-                        onSave={(content) => handleUpdateNote(note.id, content)}
+                        enableRange={false}
+                        onSave={(content) =>
+                          handleUpdateNote(note.id, content)
+                        }
                         onDelete={() => handleDeleteNote(note.id)}
                         onCancel={() => {}}
                       />
                     ))}
 
-                    {/* Active Note Editor (new note) */}
-                    {addingNote?.verseId === verse.id && (
-                      <NoteEditor
-                        note={
-                          addingNote.wordIndex !== undefined
-                            ? (wordNotes.find(
-                                (n) => n.wordIndex === addingNote.wordIndex
-                              ) as RangeNote | undefined)
-                            : undefined
-                        }
-                        verseId={verse.id}
-                        verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
-                        wordText={addingNote.wordText}
-                        enableRange={addingNote.wordIndex === undefined}
-                        onSave={(content, range) => {
-                          if (addingNote.wordIndex !== undefined) {
-                            // word note: single verse
-                            handleSaveWordNote(addingNote.wordIndex, content);
-                          } else {
-                            // verse-level note: optionally range
+                    {/* Active Note Editor (new note on this verse) */}
+                    {addingNote?.verseId === verse.id &&
+                      addingNote.wordIndex === undefined && (
+                        <NoteEditor
+                          verseId={verse.id}
+                          verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
+                          enableRange={true}
+                          onSave={(content, range) => {
                             handleSaveNote(content, range);
-                          }
-                          setAddingNote(null);
-                        }}
-                        onDelete={() => {
-                          if (addingNote.wordIndex !== undefined) {
-                            const existingNote = wordNotes.find(
-                              (n) => n.wordIndex === addingNote.wordIndex
-                            );
-                            if (existingNote) {
-                              handleDeleteNote(existingNote.id);
-                            }
-                          }
-                          setAddingNote(null);
-                        }}
-                        onCancel={() => setAddingNote(null)}
-                      />
-                    )}
+                            setAddingNote(null);
+                          }}
+                          onDelete={() => {
+                            setAddingNote(null);
+                          }}
+                          onCancel={() => setAddingNote(null)}
+                        />
+                      )}
                   </div>
                 )}
               </div>
             );
           })}
-
-          {verses.length === 0 && (
-            <div className="text-center text-muted-foreground py-12">
-              <p>No verses available for this chapter.</p>
-              <p className="text-sm mt-2">
-                Try selecting a different book or chapter.
-              </p>
-            </div>
-          )}
         </div>
       </ScrollArea>
 
