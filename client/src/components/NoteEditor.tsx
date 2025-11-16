@@ -2,11 +2,9 @@ import { useEffect, useState } from "react";
 import { Note } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { X, Trash2, Pencil } from "lucide-react";
 
-/**
- * These should match the types used in BibleReader.
- */
 type NoteTheme = "yellow" | "blue" | "green" | "purple" | "pink" | "gray";
 
 type NoteSaveOptions = {
@@ -16,14 +14,16 @@ type NoteSaveOptions = {
   title?: string;
 };
 
+type RangeNote = Note & {
+  startVerse?: number;
+  endVerse?: number;
+  noteTheme?: NoteTheme;
+  crossReferences?: string;
+  noteTitle?: string;
+};
+
 interface NoteEditorProps {
-  note?: Note & {
-    startVerse?: number;
-    endVerse?: number;
-    noteTheme?: NoteTheme;
-    crossReferences?: string;
-    noteTitle?: string;
-  };
+  note?: RangeNote;
   verseId: string;
   verseReference: string;
   wordText?: string;
@@ -48,20 +48,19 @@ export function NoteEditor({
   onCancel,
 }: NoteEditorProps) {
   const [content, setContent] = useState(note?.content ?? "");
-  const [theme, setTheme] = useState<NoteTheme>(note?.noteTheme ?? "yellow");
-  const [crossRefs, setCrossRefs] = useState(note?.crossReferences ?? "");
   const [title, setTitle] = useState(note?.noteTitle ?? "");
-
-  // collapsed = read-only "note card" view
-  const [isCollapsed, setIsCollapsed] = useState<boolean>(!!note);
+  const [crossRefs, setCrossRefs] = useState(note?.crossReferences ?? "");
+  const [theme, setTheme] = useState<NoteTheme>(note?.noteTheme ?? "yellow");
 
   // scope: this verse only vs range of verses within the same chapter
   const [scopeMode, setScopeMode] = useState<"single" | "range">("single");
   const [startVerse, setStartVerse] = useState<number>(1);
   const [endVerse, setEndVerse] = useState<number>(1);
 
-  // Persist textarea height while this component is mounted
-  const [editorHeight, setEditorHeight] = useState<number | null>(null);
+  // view vs edit mode:
+  // - existing note => start in view mode
+  // - new note (no note prop) => start in edit mode
+  const [isEditing, setIsEditing] = useState<boolean>(() => !note);
 
   // Parse verse number from something like "John 3:16" or "John 3:16–18"
   useEffect(() => {
@@ -86,18 +85,13 @@ export function NoteEditor({
     }
   }, [verseReference]);
 
-  // If the note prop changes (editing existing note), sync content/theme/crossRefs/title
+  // If the incoming note changes (e.g., edited elsewhere), sync local state
   useEffect(() => {
     if (note) {
       setContent(note.content ?? "");
-      setTheme(note.noteTheme ?? "yellow");
-      setCrossRefs(note.crossReferences ?? "");
       setTitle(note.noteTitle ?? "");
-      setIsCollapsed(true); // existing note: show collapsed by default
-    } else {
-      // new note: open editor
-      setIsCollapsed(false);
-      setEditorHeight(null); // fresh height for new notes
+      setCrossRefs(note.crossReferences ?? "");
+      setTheme(note.noteTheme ?? "yellow");
     }
   }, [note]);
 
@@ -105,173 +99,158 @@ export function NoteEditor({
     const trimmed = content.trim();
     if (!trimmed) return;
 
-    let rangeOpt: { startVerse: number; endVerse: number } | undefined;
+    const options: NoteSaveOptions = {
+      theme,
+      crossReferences: crossRefs.trim() || undefined,
+      title: title.trim() || "",
+    };
 
-    if (scopeMode === "range" && enableRange) {
+    if (scopeMode === "range" && enableRange && !wordText) {
       const start = Math.min(startVerse, endVerse);
       const end = Math.max(startVerse, endVerse);
-      rangeOpt = { startVerse: start, endVerse: end };
+      options.range = { startVerse: start, endVerse: end };
     }
 
-    onSave(trimmed, {
-      ...(rangeOpt ? { range: rangeOpt } : {}),
-      theme,
-      crossReferences: crossRefs,
-      title,
-    });
+    onSave(trimmed, options);
 
+    // For existing notes, stay mounted but switch to view mode
     if (note) {
-      // Editing existing note: stay mounted but collapse back to "note view"
-      setIsCollapsed(true);
-    } else {
-      // New note: parent will create the note & remove this editor
-      onCancel();
-    }
-  };
-
-  const handleCancelClick = () => {
-    if (note) {
-      // Existing note: revert edits & collapse
-      setContent(note.content ?? "");
-      setTheme(note.noteTheme ?? "yellow");
-      setCrossRefs(note.crossReferences ?? "");
-      setTitle(note.noteTitle ?? "");
-      setIsCollapsed(true);
-    } else {
-      // New note: close editor
-      onCancel();
+      setIsEditing(false);
     }
   };
 
   const disableScopeControls = !enableRange;
 
-  // Theme color dots
-  const themeOptions: { id: NoteTheme; label: string; color: string }[] = [
-    { id: "yellow", label: "Yellow", color: "bg-amber-500" },
-    { id: "blue", label: "Blue", color: "bg-sky-500" },
-    { id: "green", label: "Green", color: "bg-emerald-500" },
-    { id: "purple", label: "Purple", color: "bg-violet-500" },
-    { id: "pink", label: "Pink", color: "bg-rose-500" },
-    { id: "gray", label: "Gray", color: "bg-slate-500" },
-  ];
+  const handleClickReference = () => {
+    const el = document.querySelector<HTMLElement>(
+      `[data-verse-id="${verseId}"]`
+    );
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-primary/60", "bg-accent/20");
+      setTimeout(() => {
+        el.classList.remove("ring-2", "ring-primary/60", "bg-accent/20");
+      }, 1200);
+    }
+  };
 
-  // Helper: split crossRefs string into individual references
-  const getCrossRefList = (value: string) =>
-    value
-      .split(/[;,]/)
-      .map((v) => v.trim())
-      .filter((v) => v.length > 0);
+  const themeChipClasses: Record<NoteTheme, string> = {
+    yellow:
+      "border-amber-500/70 bg-amber-500/10 data-[active=true]:bg-amber-500/20",
+    blue: "border-sky-500/70 bg-sky-500/10 data-[active=true]:bg-sky-500/20",
+    green:
+      "border-emerald-500/70 bg-emerald-500/10 data-[active=true]:bg-emerald-500/20",
+    purple:
+      "border-violet-500/70 bg-violet-500/10 data-[active=true]:bg-violet-500/20",
+    pink: "border-rose-500/70 bg-rose-500/10 data-[active=true]:bg-rose-500/20",
+    gray:
+      "border-slate-500/70 bg-slate-500/10 data-[active=true]:bg-slate-500/20",
+  };
 
-  /**
-   * COLLAPSED MODE – read-only note card
-   */
-  if (isCollapsed && note) {
-    const crossRefList = getCrossRefList(note.crossReferences ?? "");
+  // VIEW MODE
+  if (!isEditing && note) {
+    const displayTitle = note.noteTitle?.trim() || "Untitled note";
 
     return (
-      <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
-        {/* Top: title + selected verses (just text) */}
-        <div className="flex items-start justify-between gap-2 mb-1.5">
-          <div className="space-y-0.5">
-            {note.noteTitle && (
-              <div className="font-semibold text-sm md:text-base tracking-tight">
-                {note.noteTitle}
-              </div>
-            )}
-
-            {/* Selected verses as plain text */}
-            <div className="text-[11px] text-muted-foreground">
-              {verseReference}
+      <div className="rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
+        {/* Header row: title + edit button */}
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex flex-col">
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">
+              Note
             </div>
-
-            {wordText && (
-              <div className="italic text-[11px] text-muted-foreground">
-                Word: “{wordText}”
-              </div>
-            )}
+            <div className="font-semibold text-sm">
+              {displayTitle}
+            </div>
           </div>
 
-          {/* Collapsed view: only Edit button (no Delete here) */}
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setIsCollapsed(false)}
-              className="text-[11px] text-muted-foreground hover:text-primary hover:underline flex items-center gap-1"
-            >
-              <Pencil className="h-3 w-3" />
-              Edit
-            </button>
-          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+            onClick={() => setIsEditing(true)}
+          >
+            <Pencil className="h-3 w-3" />
+          </Button>
         </div>
 
-        {/* Note content */}
+        {/* Selected verses (top, non-clickable text) */}
+        <div className="text-[11px] text-muted-foreground mb-2">
+          {verseReference}
+          {wordText && (
+            <>
+              {" "}
+              · <span className="italic">“{wordText}”</span>
+            </>
+          )}
+        </div>
+
+        {/* Content */}
         <div className="text-sm whitespace-pre-wrap mb-2">
           {note.content}
         </div>
 
-        {/* Bottom: cross references (clickable chips/links) */}
-        {crossRefList.length > 0 && (
-          <div className="mt-1 text-[11px] text-muted-foreground">
-            <span className="font-medium mr-1">Cross refs:</span>
-            <div className="inline-flex flex-wrap gap-1">
-              {crossRefList.map((ref) => (
-                <button
-                  key={ref}
-                  type="button"
-                  className="px-1.5 py-0.5 rounded-full bg-accent/60 text-primary text-[11px] hover:bg-accent hover:underline"
-                  onClick={() => {
-                    // TODO: navigate to the verse for `ref`
-                    // console.log("Cross-ref clicked:", ref);
-                  }}
-                >
-                  {ref}
-                </button>
-              ))}
-            </div>
+        {/* Cross refs at bottom, link-styled but no navigation yet */}
+        {note.crossReferences && (
+          <div className="pt-1 border-t border-border/60 mt-2">
+            <button
+              type="button"
+              className="text-[11px] text-primary/80 hover:underline underline-offset-2"
+            >
+              Cross reference: {note.crossReferences}
+            </button>
           </div>
         )}
+
+        {/* Reference at very bottom, clickable to scroll */}
+        <div className="mt-1">
+          <button
+            type="button"
+            onClick={handleClickReference}
+            className="text-[11px] text-muted-foreground hover:text-primary hover:underline underline-offset-2"
+          >
+            {verseReference}
+          </button>
+        </div>
       </div>
     );
   }
 
-  /**
-   * EDITOR MODE
-   */
-  const crossRefPreviewList = getCrossRefList(crossRefs);
-
+  // EDIT MODE
   return (
     <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
-      {/* Header row: title + verse reference text + close */}
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="flex-1 space-y-1">
-          {/* Title input – more prominent */}
-          <input
-            type="text"
-            className="w-full px-2 py-1 border border-border rounded text-xs bg-background font-semibold"
-            placeholder="Title (optional)"
+      {/* Header row: title input + close / delete */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex-1 mr-2">
+          <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            placeholder="Note title…"
+            className="h-8 text-sm font-semibold"
           />
-
-          {/* Selected verses as text (not a button) */}
-          <div className="text-[11px] text-muted-foreground">
-            {verseReference}
-          </div>
-
-          {wordText && (
-            <div className="italic text-[11px] text-muted-foreground">
-              Word: “{wordText}”
-            </div>
-          )}
         </div>
 
-        <button
-          type="button"
-          onClick={handleCancelClick}
-          className="text-xs text-muted-foreground hover:text-foreground"
-        >
-          <X className="h-3 w-3" />
-        </button>
+        <div className="flex items-center gap-1">
+          {onDelete && note && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={onDelete}
+              className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          )}
+          <button
+            type="button"
+            onClick={onCancel}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
       </div>
 
       {/* Scope controls – hidden for word notes or when enableRange=false */}
@@ -333,64 +312,74 @@ export function NoteEditor({
         </div>
       )}
 
-      {/* Theme selector */}
-      <div className="mb-2 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-          <span>Note color:</span>
-          <div className="flex items-center gap-1.5">
-            {themeOptions.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => setTheme(opt.id)}
-                className={`h-4 w-4 rounded-full border border-border flex items-center justify-center ${
-                  theme === opt.id ? "ring-2 ring-primary" : ""
-                }`}
-              >
-                <span className={`h-2.5 w-2.5 rounded-full ${opt.color}`} />
-              </button>
-            ))}
-          </div>
+      {/* Theme picker */}
+      <div className="mb-2">
+        <div className="text-[11px] text-muted-foreground mb-1">
+          Note color
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {(
+            ["yellow", "blue", "green", "purple", "pink", "gray"] as NoteTheme[]
+          ).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTheme(t)}
+              data-active={theme === t}
+              className={`h-6 px-2 rounded-full border text-[11px] capitalize transition-colors ${themeChipClasses[t]} ${
+                theme === t ? "ring-1 ring-primary/60" : ""
+              }`}
+            >
+              {t}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Textarea – taller by default + resizable height persists */}
+      {/* Textarea */}
       <Textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
-        rows={6}
+        rows={5}
         placeholder="Write your note…"
         className="mb-2 text-sm resize-y"
-        style={editorHeight ? { height: editorHeight } : undefined}
-        onMouseUp={(e) => {
-          setEditorHeight(e.currentTarget.offsetHeight);
-        }}
-        onTouchEnd={(e) => {
-          setEditorHeight(e.currentTarget.offsetHeight);
-        }}
       />
 
-      {/* Actions */}
-      <div className="flex justify-between items-center mt-1">
-        {/* EDITOR ONLY: show Delete here */}
-        {onDelete && note && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={onDelete}
-            className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-          >
-            <Trash2 className="h-3 w-3" />
-          </Button>
-        )}
+      {/* Cross references */}
+      <div className="mb-2">
+        <div className="text-[11px] text-muted-foreground mb-1">
+          Cross references (optional)
+        </div>
+        <Input
+          value={crossRefs}
+          onChange={(e) => setCrossRefs(e.target.value)}
+          placeholder="e.g. Matt 28:19; Acts 2:38"
+          className="h-8 text-xs"
+        />
+      </div>
 
-        <div className="ml-auto flex gap-2">
+      {/* Reference at bottom, clickable */}
+      <div className="mt-2 border-t border-border/60 pt-1 flex justify-between items-center">
+        <button
+          type="button"
+          onClick={handleClickReference}
+          className="text-[11px] text-muted-foreground hover:text-primary hover:underline underline-offset-2"
+        >
+          {verseReference}
+          {wordText && (
+            <>
+              {" "}
+              · <span className="italic">“{wordText}”</span>
+            </>
+          )}
+        </button>
+
+        <div className="flex gap-2">
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={handleCancelClick}
+            onClick={onCancel}
           >
             Cancel
           </Button>
@@ -403,37 +392,6 @@ export function NoteEditor({
             Save note
           </Button>
         </div>
-      </div>
-
-      {/* Bottom: cross references input + preview as clickable chips */}
-      <div className="mt-2 space-y-1">
-        <input
-          type="text"
-          className="w-full px-2 py-1 border border-border rounded text-[11px] bg-background"
-          placeholder="Cross references (e.g. John 15:1–5; Rom 6)"
-          value={crossRefs}
-          onChange={(e) => setCrossRefs(e.target.value)}
-        />
-
-        {crossRefPreviewList.length > 0 && (
-          <div className="text-[11px] text-muted-foreground">
-            <span className="font-medium mr-1">Links:</span>
-            <div className="inline-flex flex-wrap gap-1">
-              {crossRefPreviewList.map((ref) => (
-                <button
-                  key={ref}
-                  type="button"
-                  className="px-1.5 py-0.5 rounded-full bg-accent/60 text-primary text-[11px] hover:bg-accent hover:underline"
-                  onClick={() => {
-                    // TODO: navigate to verse for `ref`
-                  }}
-                >
-                  {ref}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
