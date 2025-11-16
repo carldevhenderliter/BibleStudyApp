@@ -24,10 +24,13 @@ interface NoteEditorProps {
   onCancel: () => void;
 }
 
+const EDITOR_HEIGHT_KEY = "note-editor-height";
+
 /**
- * Simple editor:
- * - can select "this verse only" or "verse range"
- * - returns optional { startVerse, endVerse } to parent
+ * Editor behavior:
+ * - taller by default (about 8 lines)
+ * - user can resize with the handle
+ * - last height is saved in localStorage and reused next time
  */
 export function NoteEditor({
   note,
@@ -45,6 +48,20 @@ export function NoteEditor({
   const [scopeMode, setScopeMode] = useState<"single" | "range">("single");
   const [startVerse, setStartVerse] = useState<number>(1);
   const [endVerse, setEndVerse] = useState<number>(1);
+
+  // persistent editor height (in px)
+  const [editorHeight, setEditorHeight] = useState<number | undefined>(undefined);
+
+  // Load saved editor height on mount
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem(EDITOR_HEIGHT_KEY);
+    if (!saved) return;
+    const parsed = parseInt(saved, 10);
+    if (!Number.isNaN(parsed) && parsed > 0) {
+      setEditorHeight(parsed);
+    }
+  }, []);
 
   // Parse verse number from something like "John 3:16" or "John 3:16–18"
   useEffect(() => {
@@ -99,6 +116,20 @@ export function NoteEditor({
   };
 
   const disableScopeControls = !enableRange;
+
+  // When user stops resizing the textarea, capture its height
+  const handleResizeStop = (
+    e: React.MouseEvent<HTMLTextAreaElement> | React.TouchEvent<HTMLTextAreaElement>
+  ) => {
+    const target = e.currentTarget;
+    const newHeight = target.offsetHeight;
+    if (newHeight > 0) {
+      setEditorHeight(newHeight);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(EDITOR_HEIGHT_KEY, String(newHeight));
+      }
+    }
+  };
 
   return (
     <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
@@ -185,9 +216,13 @@ export function NoteEditor({
       <Textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
-        rows={4}
+        // taller default if no saved height, otherwise use saved px
+        rows={editorHeight ? undefined : 8}
+        style={editorHeight ? { height: editorHeight } : undefined}
         placeholder="Write your note…"
-        className="mb-2 text-sm"
+        className="mb-2 text-sm resize-y min-h-[150px]"
+        onMouseUp={handleResizeStop}
+        onTouchEnd={handleResizeStop}
       />
 
       {/* Actions */}
