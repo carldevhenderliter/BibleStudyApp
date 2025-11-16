@@ -13,6 +13,7 @@ type NoteSaveOptions = {
   range?: { startVerse: number; endVerse: number };
   theme?: NoteTheme;
   crossReferences?: string;
+  title?: string;
 };
 
 interface NoteEditorProps {
@@ -21,6 +22,7 @@ interface NoteEditorProps {
     endVerse?: number;
     noteTheme?: NoteTheme;
     crossReferences?: string;
+    noteTitle?: string;
   };
   verseId: string;
   verseReference: string;
@@ -48,6 +50,7 @@ export function NoteEditor({
   const [content, setContent] = useState(note?.content ?? "");
   const [theme, setTheme] = useState<NoteTheme>(note?.noteTheme ?? "yellow");
   const [crossRefs, setCrossRefs] = useState(note?.crossReferences ?? "");
+  const [title, setTitle] = useState(note?.noteTitle ?? "");
 
   // collapsed = read-only "note card" view
   const [isCollapsed, setIsCollapsed] = useState<boolean>(!!note);
@@ -83,12 +86,13 @@ export function NoteEditor({
     }
   }, [verseReference]);
 
-  // If the note prop changes (editing existing note), sync content/theme/crossRefs
+  // If the note prop changes (editing existing note), sync content/theme/crossRefs/title
   useEffect(() => {
     if (note) {
       setContent(note.content ?? "");
       setTheme(note.noteTheme ?? "yellow");
       setCrossRefs(note.crossReferences ?? "");
+      setTitle(note.noteTitle ?? "");
       setIsCollapsed(true); // existing note: show collapsed by default
     } else {
       // new note: open editor
@@ -113,6 +117,7 @@ export function NoteEditor({
       ...(rangeOpt ? { range: rangeOpt } : {}),
       theme,
       crossReferences: crossRefs,
+      title,
     });
 
     if (note) {
@@ -130,6 +135,7 @@ export function NoteEditor({
       setContent(note.content ?? "");
       setTheme(note.noteTheme ?? "yellow");
       setCrossRefs(note.crossReferences ?? "");
+      setTitle(note.noteTitle ?? "");
       setIsCollapsed(true);
     } else {
       // New note: close editor
@@ -155,32 +161,34 @@ export function NoteEditor({
   if (isCollapsed && note) {
     return (
       <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
+        {/* Top: title + selected verses */}
         <div className="flex items-start justify-between gap-2 mb-1.5">
-          <div className="text-xs text-muted-foreground space-y-0.5">
-            {wordText && (
-              <div className="italic text-[11px]">
-                Word: “{wordText}”
+          <div className="space-y-0.5">
+            {note.noteTitle && (
+              <div className="font-semibold text-sm">
+                {note.noteTitle}
               </div>
             )}
-            {note.crossReferences && note.crossReferences.trim() && (
-              <div className="text-[11px]">
-                <span className="font-medium">Cross refs: </span>
-                {note.crossReferences}
+
+            <button
+              type="button"
+              className="text-[11px] text-primary hover:underline cursor-pointer"
+              onClick={() => {
+                // TODO: navigate to the verse referenced by `verseReference`
+              }}
+            >
+              {verseReference}
+            </button>
+
+            {wordText && (
+              <div className="italic text-[11px] text-muted-foreground">
+                Word: “{wordText}”
               </div>
             )}
           </div>
 
+          {/* Collapsed view: only Edit button (no Delete here) */}
           <div className="flex items-center gap-1">
-            {onDelete && (
-              <button
-                type="button"
-                onClick={onDelete}
-                className="text-[11px] text-destructive hover:text-destructive hover:underline flex items-center gap-1"
-              >
-                <Trash2 className="h-3 w-3" />
-                Delete
-              </button>
-            )}
             <button
               type="button"
               onClick={() => setIsCollapsed(false)}
@@ -197,16 +205,13 @@ export function NoteEditor({
           {note.content}
         </div>
 
-        {/* Reference at the bottom, clickable (no behavior yet) */}
-        <button
-          type="button"
-          className="mt-1 text-[11px] text-primary hover:underline cursor-pointer"
-          onClick={() => {
-            // TODO: navigate to the verse referenced by `verseReference`
-          }}
-        >
-          {verseReference}
-        </button>
+        {/* Bottom: cross references */}
+        {note.crossReferences && note.crossReferences.trim() && (
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            <span className="font-medium">Cross refs: </span>
+            {note.crossReferences}
+          </div>
+        )}
       </div>
     );
   }
@@ -216,15 +221,34 @@ export function NoteEditor({
    */
   return (
     <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
-      {/* Header row: minimal, close button */}
-      <div className="flex items-center justify-between mb-2 gap-2">
-        <div className="text-xs text-muted-foreground">
+      {/* Header row: title + verse reference + close */}
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="flex-1 space-y-1">
+          <input
+            type="text"
+            className="w-full px-2 py-1 border border-border rounded text-xs bg-background"
+            placeholder="Title (optional)"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+
+          <button
+            type="button"
+            className="text-[11px] text-primary hover:underline cursor-pointer"
+            onClick={() => {
+              // TODO: navigate to the verse referenced by `verseReference`
+            }}
+          >
+            {verseReference}
+          </button>
+
           {wordText && (
-            <span className="italic text-[11px]">
+            <div className="italic text-[11px] text-muted-foreground">
               Word: “{wordText}”
-            </span>
+            </div>
           )}
         </div>
+
         <button
           type="button"
           onClick={handleCancelClick}
@@ -293,7 +317,7 @@ export function NoteEditor({
         </div>
       )}
 
-      {/* Theme + cross refs */}
+      {/* Theme selector */}
       <div className="mb-2 flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
           <span>Note color:</span>
@@ -311,16 +335,6 @@ export function NoteEditor({
               </button>
             ))}
           </div>
-        </div>
-
-        <div className="flex-1 min-w-[140px]">
-          <input
-            type="text"
-            className="w-full px-2 py-1 border border-border rounded text-[11px] bg-background"
-            placeholder="Cross references (e.g. John 15:1–5; Rom 6)"
-            value={crossRefs}
-            onChange={(e) => setCrossRefs(e.target.value)}
-          />
         </div>
       </div>
 
@@ -344,6 +358,7 @@ export function NoteEditor({
 
       {/* Actions */}
       <div className="flex justify-between items-center mt-1">
+        {/* EDITOR ONLY: show Delete here */}
         {onDelete && note && (
           <Button
             type="button"
@@ -376,16 +391,16 @@ export function NoteEditor({
         </div>
       </div>
 
-      {/* Reference at the absolute bottom, clickable (no behavior yet) */}
-      <button
-        type="button"
-        className="mt-2 text-[11px] text-primary hover:underline cursor-pointer"
-        onClick={() => {
-          // TODO: navigate to the verse referenced by `verseReference`
-        }}
-      >
-        {verseReference}
-      </button>
+      {/* Bottom: cross references */}
+      <div className="mt-2">
+        <input
+          type="text"
+          className="w-full px-2 py-1 border border-border rounded text-[11px] bg-background"
+          placeholder="Cross references (e.g. John 15:1–5; Rom 6)"
+          value={crossRefs}
+          onChange={(e) => setCrossRefs(e.target.value)}
+        />
+      </div>
     </div>
   );
 }
