@@ -15,11 +15,11 @@ export type ExtendedNote = Note & {
 
 type ScopeMode = "single" | "range";
 
-interface EditorSaveOptions {
+export type EditorSaveOptions = {
   range?: { startVerse: number; endVerse: number };
   theme?: NoteTheme;
   crossReferences?: string;
-}
+};
 
 interface NoteEditorProps {
   note?: ExtendedNote;
@@ -87,6 +87,27 @@ function normalizeRefForCurrentChapter(
   if (!Number.isFinite(verseNum)) return null;
 
   return `${context.book} ${context.chapter}:${verseNum}`;
+}
+
+/**
+ * Parse a normalized ref like "John 3:16" into parts.
+ */
+function parseNormalizedRef(normalized: string): {
+  book: string;
+  chapter: number;
+  verse: number;
+} | null {
+  const lastSpace = normalized.lastIndexOf(" ");
+  if (lastSpace === -1) return null;
+
+  const book = normalized.slice(0, lastSpace);
+  const rest = normalized.slice(lastSpace + 1); // "3:16" or "3:16-18"
+  const [chapStr, verseSegment] = rest.split(":");
+  const [verseStr] = (verseSegment ?? "1").split("-");
+  const chapter = parseInt(chapStr ?? "1", 10) || 1;
+  const verse = parseInt(verseStr ?? "1", 10) || 1;
+
+  return { book, chapter, verse };
 }
 
 const THEME_SWATCH_BG: Record<NoteTheme, string> = {
@@ -225,16 +246,40 @@ export function NoteEditor({
     );
     if (!normalized) return;
 
-    const el = document.querySelector<HTMLElement>(
-      `[data-ref="${normalized}"]`
-    );
-    if (!el) return;
+    const target = parseNormalizedRef(normalized);
+    if (!target) return;
 
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    el.classList.add("ring-2", "ring-primary/60", "bg-accent/20");
-    setTimeout(() => {
-      el.classList.remove("ring-2", "ring-primary/60", "bg-accent/20");
-    }, 1500);
+    const context = parseContextFromVerseRef(verseReference);
+
+    // Same book + chapter: just scroll within the currently loaded chapter
+    if (
+      target.book === context.book &&
+      target.chapter === context.chapter
+    ) {
+      const el = document.querySelector<HTMLElement>(
+        `[data-ref="${normalized}"]`
+      );
+      if (!el) return;
+
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-primary/60", "bg-accent/20");
+      setTimeout(() => {
+        el.classList.remove("ring-2", "ring-primary/60", "bg-accent/20");
+      }, 1500);
+      return;
+    }
+
+    // Different book or chapter: dispatch a global navigation event.
+    // Home.tsx will listen to this and change selectedBook / selectedChapter.
+    window.dispatchEvent(
+      new CustomEvent("bible:navigate", {
+        detail: {
+          book: target.book,
+          chapter: target.chapter,
+          verse: target.verse,
+        },
+      })
+    );
   };
 
   const handleSaveClick = () => {
