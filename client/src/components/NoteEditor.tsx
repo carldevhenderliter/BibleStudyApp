@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Note } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { X, Trash2 } from "lucide-react";
+import { X, Trash2, Pencil } from "lucide-react";
 
 export type NoteTheme =
   | "yellow"
@@ -36,8 +36,9 @@ interface NoteEditorProps {
   onSave: (content: string, options?: NoteSaveOptions) => void;
   onDelete?: () => void;
   onCancel: () => void;
-  // Used to handle clickable cross references
   onCrossReferenceClick?: (ref: string) => void;
+  /** New: start in edit mode (used for brand-new notes) */
+  startInEditMode?: boolean;
 }
 
 const themeButtonStyles: Record<NoteTheme, string> = {
@@ -59,16 +60,40 @@ export function NoteEditor({
   onDelete,
   onCancel,
   onCrossReferenceClick,
+  startInEditMode = false,
 }: NoteEditorProps) {
   const [content, setContent] = useState(note?.content ?? "");
   const [title, setTitle] = useState(note?.title ?? "");
   const [theme, setTheme] = useState<NoteTheme>(note?.noteTheme ?? "yellow");
   const [crossRefs, setCrossRefs] = useState(note?.crossReferences ?? "");
 
-  // scope: this verse only vs range of verses within the same chapter
   const [scopeMode, setScopeMode] = useState<"single" | "range">("single");
   const [startVerse, setStartVerse] = useState<number>(1);
   const [endVerse, setEndVerse] = useState<number>(1);
+
+  // NEW: view vs edit mode
+  const [isEditing, setIsEditing] = useState<boolean>(startInEditMode);
+
+  // When the note prop changes (open a different note), sync local state
+  useEffect(() => {
+    if (note) {
+      setContent(note.content ?? "");
+      setTitle(note.title ?? "");
+      setTheme(note.noteTheme ?? "yellow");
+      setCrossRefs(note.crossReferences ?? "");
+      // existing notes open in view mode unless explicitly forced
+      if (!startInEditMode) {
+        setIsEditing(false);
+      }
+    } else {
+      // brand new note
+      setContent("");
+      setTitle("");
+      setTheme("yellow");
+      setCrossRefs("");
+      setIsEditing(startInEditMode);
+    }
+  }, [note?.id, startInEditMode]);
 
   // Parse verse number from something like "John 3:16" or "John 3:16–18"
   useEffect(() => {
@@ -110,6 +135,26 @@ export function NoteEditor({
     }
 
     onSave(trimmed, opts);
+
+    // For existing notes, stay mounted but go back to view mode
+    if (note) {
+      setIsEditing(false);
+    }
+    // For new notes, parent will unmount this component (addingNote cleared)
+  };
+
+  const handleCancelClick = () => {
+    if (note) {
+      // revert to original note and exit edit mode
+      setContent(note.content ?? "");
+      setTitle(note.title ?? "");
+      setTheme(note.noteTheme ?? "yellow");
+      setCrossRefs(note.crossReferences ?? "");
+      setIsEditing(false);
+    } else {
+      // brand new note: close entirely
+      onCancel();
+    }
   };
 
   const disableScopeControls = !enableRange;
@@ -119,9 +164,88 @@ export function NoteEditor({
     .map((r) => r.trim())
     .filter(Boolean);
 
+  // VIEW MODE (pretty card, no editing)
+  if (!isEditing) {
+    return (
+      <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
+        {/* Header: title + mini theme dot + Edit button */}
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              className={`h-2.5 w-2.5 rounded-full ${
+                themeButtonStyles[theme].split(" ")[0]
+              }`}
+            />
+            <div className="truncate">
+              <div className="text-sm font-semibold">
+                {title || "Untitled note"}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                Verses: {verseReference}
+                {wordText && (
+                  <>
+                    {" "}
+                    · <span className="italic">“{wordText}”</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1">
+            {onDelete && note && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={onDelete}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setIsEditing(true)}
+            >
+              <Pencil className="h-3 w-3" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="mt-1 text-sm whitespace-pre-wrap">
+          {content || (
+            <span className="text-muted-foreground">No content yet…</span>
+          )}
+        </div>
+
+        {/* Cross reference chips (clickable) */}
+        {crossRefList.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {crossRefList.map((ref) => (
+              <button
+                key={ref}
+                type="button"
+                className="text-[11px] px-2 py-1 rounded-full border border-dashed border-primary/50 text-primary hover:bg-primary/10"
+                onClick={() => onCrossReferenceClick?.(ref)}
+              >
+                {ref}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // EDIT MODE
   return (
     <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
-      {/* Header row: title + close */}
+      {/* Header row: title input + close */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex-1">
           <input
@@ -134,7 +258,7 @@ export function NoteEditor({
         </div>
         <button
           type="button"
-          onClick={onCancel}
+          onClick={handleCancelClick}
           className="text-xs text-muted-foreground hover:text-foreground"
         >
           <X className="h-3 w-3" />
@@ -299,7 +423,7 @@ export function NoteEditor({
             type="button"
             variant="outline"
             size="sm"
-            onClick={onCancel}
+            onClick={handleCancelClick}
           >
             Cancel
           </Button>
