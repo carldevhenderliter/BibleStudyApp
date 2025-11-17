@@ -89,6 +89,15 @@ function normalizeRefForCurrentChapter(
   return `${context.book} ${context.chapter}:${verseNum}`;
 }
 
+const THEME_SWATCH_BG: Record<NoteTheme, string> = {
+  yellow: "bg-amber-500",
+  blue: "bg-sky-500",
+  green: "bg-emerald-500",
+  purple: "bg-violet-500",
+  pink: "bg-rose-500",
+  gray: "bg-slate-500",
+};
+
 export function NoteEditor({
   note,
   verseId: _verseId,
@@ -103,7 +112,33 @@ export function NoteEditor({
   const isNew = !note;
   const [isEditing, setIsEditing] = useState<boolean>(isNew);
 
-  const [content, setContent] = useState<string>(note?.content ?? "");
+  // Title + body are stored together in note.content as:
+  //   first line = title
+  //   rest       = body
+  const [title, setTitle] = useState<string>(() => {
+    if (!note?.content) return "";
+    const [firstLine] = note.content.split(/\r?\n/);
+    return firstLine ?? "";
+  });
+
+  const [body, setBody] = useState<string>(() => {
+    if (!note?.content) return "";
+    const lines = note.content.split(/\r?\n/);
+    if (lines.length <= 1) return "";
+    return lines.slice(1).join("\n");
+  });
+
+  useEffect(() => {
+    if (!note?.content) {
+      setTitle("");
+      setBody("");
+      return;
+    }
+    const lines = note.content.split(/\r?\n/);
+    setTitle(lines[0] ?? "");
+    setBody(lines.length > 1 ? lines.slice(1).join("\n") : "");
+  }, [note?.content]);
+
   const [crossRefs, setCrossRefs] = useState<string>(
     note?.crossReferences ?? ""
   );
@@ -116,7 +151,7 @@ export function NoteEditor({
     }
   }, [note?.noteTheme]);
 
-  // Editor height persistence
+  // Editor height persistence (applies to the body Textarea)
   const [editorHeight, setEditorHeight] = useState<number>(() => {
     if (typeof window === "undefined") return 160;
     const stored = window.localStorage.getItem("note-editor-height");
@@ -173,14 +208,6 @@ export function NoteEditor({
     }
   }, [verseReference]);
 
-  // Title = first line of NOTE CONTENT (we never strip it out of the content itself)
-  const lines = (note?.content ?? "").split(/\r?\n/);
-  const titleFromContent = lines[0] || "";
-  const bodyFromContent =
-    lines.length > 1 ? lines.slice(1).join("\n") : "";
-
-  const effectiveTitle = titleFromContent.trim();
-
   const disableScopeControls = !enableRange || !!wordText;
 
   const parseCrossRefsList = (value: string): string[] => {
@@ -211,8 +238,8 @@ export function NoteEditor({
   };
 
   const handleSaveClick = () => {
-    const trimmed = content.trim();
-    if (!trimmed) return;
+    const combined = [title, body].filter((x) => x.trim().length > 0).join("\n");
+    if (!combined.trim()) return;
 
     const opts: EditorSaveOptions = {
       crossReferences: crossRefs.trim() || undefined,
@@ -225,7 +252,7 @@ export function NoteEditor({
       opts.range = { startVerse: start, endVerse: end };
     }
 
-    onSave(trimmed, opts);
+    onSave(combined, opts);
 
     if (!isNew) {
       // existing note: stay mounted but go back to view mode
@@ -233,22 +260,22 @@ export function NoteEditor({
     }
   };
 
+  const crossRefList = parseCrossRefsList(crossRefs);
+
   // VIEW MODE (saved note, not editing)
   if (!isEditing && note) {
-    const noteLines = note.content.split(/\r?\n/);
-    const viewTitle = noteLines[0] || "";
+    const lines = note.content.split(/\r?\n/);
+    const viewTitle = (lines[0] ?? "").trim();
     const viewBody =
-      noteLines.length > 1
-        ? noteLines.slice(1).join("\n")
-        : "";
+      lines.length > 1 ? lines.slice(1).join("\n") : "";
 
-    const crossRefList = parseCrossRefsList(
+    const viewCrossRefs = parseCrossRefsList(
       note.crossReferences ?? ""
     );
 
     return (
       <div className="rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
-        {/* Header: title + selected verses */}
+        {/* Title + verse range */}
         <div className="mb-2">
           {viewTitle && (
             <div className="text-sm font-semibold leading-snug">
@@ -274,13 +301,13 @@ export function NoteEditor({
         )}
 
         {/* Cross references */}
-        {crossRefList.length > 0 && (
+        {viewCrossRefs.length > 0 && (
           <div className="mt-2">
             <div className="text-[11px] text-muted-foreground mb-1">
               Cross references
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {crossRefList.map((ref) => (
+              {viewCrossRefs.map((ref) => (
                 <button
                   key={ref}
                   type="button"
@@ -310,8 +337,6 @@ export function NoteEditor({
   }
 
   // EDIT MODE (new note or editing existing)
-  const crossRefList = parseCrossRefsList(crossRefs);
-
   return (
     <div className="rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
       {/* Header row */}
@@ -327,7 +352,13 @@ export function NoteEditor({
         </div>
         <button
           type="button"
-          onClick={onCancel}
+          onClick={() => {
+            if (isNew) {
+              onCancel();
+            } else {
+              setIsEditing(false);
+            }
+          }}
           className="text-xs text-muted-foreground hover:text-foreground"
         >
           <X className="h-3 w-3" />
@@ -409,12 +440,15 @@ export function NoteEditor({
                 key={t}
                 type="button"
                 onClick={() => setTheme(t)}
-                className={`px-2 py-0.5 rounded-full border text-[11px] capitalize ${
+                className={`px-2 py-0.5 rounded-full border text-[11px] capitalize flex items-center gap-1 ${
                   theme === t
                     ? "border-primary bg-primary/10 text-primary"
                     : "border-border text-muted-foreground hover:bg-accent/60"
                 }`}
               >
+                <span
+                  className={`inline-block h-3 w-3 rounded-full ${THEME_SWATCH_BG[t]}`}
+                />
                 {t}
               </button>
             )
@@ -422,13 +456,24 @@ export function NoteEditor({
         </div>
       </div>
 
-      {/* Textarea */}
+      {/* Title input */}
+      <div className="mb-2">
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="w-full rounded border border-border bg-background px-2 py-1 text-sm mb-1"
+          placeholder="Note title…"
+        />
+      </div>
+
+      {/* Body textarea */}
       <Textarea
         ref={textareaRef}
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
         rows={6}
-        placeholder="Write your note… (first line will be treated as the title)"
+        placeholder="Write your note…"
         className="mb-2 text-sm resize-y"
         style={{ minHeight: editorHeight }}
       />
@@ -480,7 +525,13 @@ export function NoteEditor({
             type="button"
             variant="outline"
             size="sm"
-            onClick={onCancel}
+            onClick={() => {
+              if (isNew) {
+                onCancel();
+              } else {
+                setIsEditing(false);
+              }
+            }}
           >
             Cancel
           </Button>
@@ -488,7 +539,9 @@ export function NoteEditor({
             type="button"
             size="sm"
             onClick={handleSaveClick}
-            disabled={!content.trim()}
+            disabled={
+              ![title, body].some((x) => x.trim().length > 0)
+            }
           >
             Save note
           </Button>
