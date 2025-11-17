@@ -1,72 +1,71 @@
-import { useState } from 'react';
-import { AppSidebar } from '@/components/AppSidebar';
-import { BibleReader } from '@/components/BibleReader';
-import { ToolsPanel } from '@/components/ToolsPanel';
-import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
-import { Button } from '@/components/ui/button';
-import { Moon, Sun, Settings, ArrowLeft, ArrowRight } from 'lucide-react';
-import { useTheme } from '@/components/ThemeProvider';
-import { Translation } from '@/lib/bibleData';
-import {
-  Sheet,
-  SheetContent,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+import { useState } from "react";
+import { AppSidebar } from "@/components/AppSidebar";
+import { BibleReader } from "@/components/BibleReader";
+import { ToolsPanel } from "@/components/ToolsPanel";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { Button } from "@/components/ui/button";
+import { Moon, Sun, Settings, ArrowLeft, ArrowRight } from "lucide-react";
+import { useTheme } from "@/components/ThemeProvider";
+import { Translation } from "@/lib/bibleData";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 type Location = {
   book: string;
   chapter: number;
+  verse?: number;
 };
 
 export default function Home() {
   const { theme, toggleTheme } = useTheme();
 
-  const [selectedBook, setSelectedBook] = useState('John');
+  const [selectedBook, setSelectedBook] = useState("John");
   const [selectedChapter, setSelectedChapter] = useState(1);
 
-  // ✅ Strong’s ON by default now
+  // Strong’s ON by default
   const [showStrongsNumbers, setShowStrongsNumbers] = useState(true);
   const [showInterlinear, setShowInterlinear] = useState(false);
   const [showNotes, setShowNotes] = useState(true);
   const [fontSize, setFontSize] = useState(17);
-  const [displayMode, setDisplayMode] = useState<'verse' | 'book'>('verse');
-  const [selectedTranslation, setSelectedTranslation] = useState<Translation>('KJV');
+  const [displayMode, setDisplayMode] = useState<"verse" | "book">("verse");
+  const [selectedTranslation, setSelectedTranslation] =
+    useState<Translation>("KJV");
 
-  // ✅ Controls the desktop settings panel on the right
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
 
-  // ✅ Simple history of locations (like browser back/forward)
+  // Simple history for back/forward
   const [history, setHistory] = useState<Location[]>([
-    { book: 'John', chapter: 1 },
+    { book: "John", chapter: 1 },
   ]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < history.length - 1;
 
-  // Centralized navigation so everything goes through here
-  const navigateTo = (book: string, chapter: number, opts?: { fromHistory?: boolean }) => {
-    // Update current view
+  const navigateTo = (
+    book: string,
+    chapter: number,
+    opts?: { fromHistory?: boolean; targetVerse?: number }
+  ) => {
     setSelectedBook(book);
     setSelectedChapter(chapter);
 
-    // If this came from back/forward, don't re-push into history
-    if (opts?.fromHistory) return;
+    if (!opts?.fromHistory) {
+      setHistory((prev) => {
+        const trimmed = prev.slice(0, historyIndex + 1);
+        const last = trimmed[trimmed.length - 1];
 
-    setHistory(prev => {
-      // Trim forward history if we've gone back in time
-      const trimmed = prev.slice(0, historyIndex + 1);
-      const last = trimmed[trimmed.length - 1];
+        if (last && last.book === book && last.chapter === chapter) {
+          return trimmed;
+        }
 
-      // If we're already at this location, don't duplicate
-      if (last && last.book === book && last.chapter === chapter) {
-        return trimmed;
-      }
-
-      const next = [...trimmed, { book, chapter }];
-      setHistoryIndex(next.length - 1);
-      return next;
-    });
+        const next: Location[] = [
+          ...trimmed,
+          { book, chapter, verse: opts?.targetVerse },
+        ];
+        setHistoryIndex(next.length - 1);
+        return next;
+      });
+    }
   };
 
   const goBack = () => {
@@ -74,7 +73,10 @@ export default function Home() {
     const newIndex = historyIndex - 1;
     const entry = history[newIndex];
     setHistoryIndex(newIndex);
-    navigateTo(entry.book, entry.chapter, { fromHistory: true });
+    navigateTo(entry.book, entry.chapter, {
+      fromHistory: true,
+      targetVerse: entry.verse,
+    });
   };
 
   const goForward = () => {
@@ -82,7 +84,10 @@ export default function Home() {
     const newIndex = historyIndex + 1;
     const entry = history[newIndex];
     setHistoryIndex(newIndex);
-    navigateTo(entry.book, entry.chapter, { fromHistory: true });
+    navigateTo(entry.book, entry.chapter, {
+      fromHistory: true,
+      targetVerse: entry.verse,
+    });
   };
 
   const style = {
@@ -98,13 +103,13 @@ export default function Home() {
           onSelectBook={(book) => navigateTo(book, selectedChapter)}
           onSelectChapter={(chapter) => navigateTo(selectedBook, chapter)}
         />
-        
+
         <div className="flex flex-col flex-1 overflow-hidden">
           <header className="flex items-center justify-between px-4 py-2 border-b bg-background">
             <div className="flex items-center gap-2">
               <SidebarTrigger data-testid="button-sidebar-toggle" />
 
-              {/* ⬅️ Back / ➡️ Forward like a browser */}
+              {/* Back / Forward buttons */}
               <Button
                 variant="ghost"
                 size="icon"
@@ -124,9 +129,9 @@ export default function Home() {
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
-            
+
             <div className="flex items-center gap-2">
-              {/* 📱 Mobile settings (Sheet stays the same) */}
+              {/* Mobile settings */}
               <Sheet>
                 <SheetTrigger asChild>
                   <Button
@@ -156,16 +161,16 @@ export default function Home() {
                 </SheetContent>
               </Sheet>
 
-              {/* 💻 Desktop Settings toggle button */}
+              {/* Desktop Settings toggle */}
               <Button
                 variant="outline"
                 size="sm"
                 className="hidden md:inline-flex"
-                onClick={() => setShowSettingsPanel(prev => !prev)}
+                onClick={() => setShowSettingsPanel((prev) => !prev)}
                 data-testid="button-settings-desktop"
               >
                 <Settings className="h-4 w-4 mr-1" />
-                {showSettingsPanel ? 'Hide settings' : 'Show settings'}
+                {showSettingsPanel ? "Hide settings" : "Show settings"}
               </Button>
 
               {/* Theme toggle */}
@@ -175,9 +180,11 @@ export default function Home() {
                 onClick={toggleTheme}
                 data-testid="button-theme-toggle"
               >
-                {theme === 'light'
-                  ? <Moon className="h-4 w-4" />
-                  : <Sun className="h-4 w-4" />}
+                {theme === "light" ? (
+                  <Moon className="h-4 w-4" />
+                ) : (
+                  <Sun className="h-4 w-4" />
+                )}
               </Button>
             </div>
           </header>
@@ -193,10 +200,14 @@ export default function Home() {
                 fontSize={fontSize}
                 displayMode={displayMode}
                 selectedTranslation={selectedTranslation}
+                // 👉 let BibleReader (notes) navigate between books/chapters
+                onNavigate={(book, chapter, verse) =>
+                  navigateTo(book, chapter, { targetVerse: verse })
+                }
               />
             </div>
 
-            {/* 🧰 Desktop ToolsPanel – now toggleable */}
+            {/* Desktop ToolsPanel – toggleable */}
             {showSettingsPanel && (
               <div className="hidden md:block w-80 border-l overflow-auto">
                 <ToolsPanel
