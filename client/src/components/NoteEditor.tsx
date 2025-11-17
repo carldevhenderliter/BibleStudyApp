@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { X, Trash2 } from "lucide-react";
 
-type NoteTheme = "yellow" | "blue" | "green" | "purple" | "pink" | "gray";
+export type NoteTheme = "yellow" | "blue" | "green" | "purple" | "pink" | "gray";
 
-type ExtendedNote = Note & {
+export type ExtendedNote = Note & {
   startVerse?: number;
   endVerse?: number;
   noteTheme?: NoteTheme;
@@ -36,6 +36,10 @@ interface NoteEditorProps {
   onCancel: () => void;
 }
 
+/**
+ * For interpreting short cross refs like "3:16" or "16" in the context of the
+ * current verseReference (e.g. "John 3:16").
+ */
 function parseContextFromVerseRef(verseReference: string): {
   book: string;
   chapter: number;
@@ -53,6 +57,12 @@ function parseContextFromVerseRef(verseReference: string): {
   return { book, chapter };
 }
 
+/**
+ * Normalize a cross ref for matching against `[data-ref="Book chap:verse"]`.
+ * - "John 3:16" → "John 3:16" (unchanged)
+ * - "3:16"      → "<same book> 3:16"
+ * - "16"        → "<same book> <same chapter>:16"
+ */
 function normalizeRefForCurrentChapter(
   rawRef: string,
   verseReference: string
@@ -97,6 +107,14 @@ export function NoteEditor({
   const [crossRefs, setCrossRefs] = useState<string>(
     note?.crossReferences ?? ""
   );
+
+  // Theme selection for this note
+  const [theme, setTheme] = useState<NoteTheme>(note?.noteTheme ?? "yellow");
+  useEffect(() => {
+    if (note?.noteTheme) {
+      setTheme(note.noteTheme);
+    }
+  }, [note?.noteTheme]);
 
   // Editor height persistence
   const [editorHeight, setEditorHeight] = useState<number>(() => {
@@ -155,7 +173,7 @@ export function NoteEditor({
     }
   }, [verseReference]);
 
-  // Title = first line of content (we NEVER strip it out of the content)
+  // Title = first line of NOTE CONTENT (we never strip it out of the content itself)
   const lines = (note?.content ?? "").split(/\r?\n/);
   const titleFromContent = lines[0] || "";
   const bodyFromContent =
@@ -164,30 +182,6 @@ export function NoteEditor({
   const effectiveTitle = titleFromContent.trim();
 
   const disableScopeControls = !enableRange || !!wordText;
-
-  const handleSaveClick = () => {
-    const trimmed = content.trim();
-    if (!trimmed) return;
-
-    const opts: EditorSaveOptions = {
-      crossReferences: crossRefs.trim() || undefined,
-    };
-
-    if (enableRange && scopeMode === "range" && !wordText) {
-      const start = Math.min(startVerse, endVerse);
-      const end = Math.max(startVerse, endVerse);
-      opts.range = { startVerse: start, endVerse: end };
-    }
-
-    onSave(trimmed, opts);
-
-    if (!isNew) {
-      // existing note: stay mounted but go back to view mode
-      setIsEditing(false);
-    } else {
-      // new note: parent usually unmounts editor after save
-    }
-  };
 
   const parseCrossRefsList = (value: string): string[] => {
     if (!value.trim()) return [];
@@ -216,7 +210,30 @@ export function NoteEditor({
     }, 1500);
   };
 
-  // VIEW MODE (saved note)
+  const handleSaveClick = () => {
+    const trimmed = content.trim();
+    if (!trimmed) return;
+
+    const opts: EditorSaveOptions = {
+      crossReferences: crossRefs.trim() || undefined,
+      theme,
+    };
+
+    if (enableRange && scopeMode === "range" && !wordText) {
+      const start = Math.min(startVerse, endVerse);
+      const end = Math.max(startVerse, endVerse);
+      opts.range = { startVerse: start, endVerse: end };
+    }
+
+    onSave(trimmed, opts);
+
+    if (!isNew) {
+      // existing note: stay mounted but go back to view mode
+      setIsEditing(false);
+    }
+  };
+
+  // VIEW MODE (saved note, not editing)
   if (!isEditing && note) {
     const noteLines = note.content.split(/\r?\n/);
     const viewTitle = noteLines[0] || "";
@@ -379,6 +396,31 @@ export function NoteEditor({
           </div>
         </div>
       )}
+
+      {/* Note color / theme controls */}
+      <div className="mb-2">
+        <div className="text-[11px] text-muted-foreground mb-1">
+          Note color
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {(["yellow", "blue", "green", "purple", "pink", "gray"] as NoteTheme[]).map(
+            (t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTheme(t)}
+                className={`px-2 py-0.5 rounded-full border text-[11px] capitalize ${
+                  theme === t
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:bg-accent/60"
+                }`}
+              >
+                {t}
+              </button>
+            )
+          )}
+        </div>
+      </div>
 
       {/* Textarea */}
       <Textarea
