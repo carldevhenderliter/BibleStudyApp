@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { AppSidebar } from '@/components/AppSidebar';
 import { BibleReader } from '@/components/BibleReader';
 import { ToolsPanel } from '@/components/ToolsPanel';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { Moon, Sun, Settings } from 'lucide-react';
+import { Moon, Sun, Settings, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useTheme } from '@/components/ThemeProvider';
 import { Translation } from '@/lib/bibleData';
 import {
@@ -13,13 +13,18 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 
+type Location = {
+  book: string;
+  chapter: number;
+};
+
 export default function Home() {
   const { theme, toggleTheme } = useTheme();
 
   const [selectedBook, setSelectedBook] = useState('John');
   const [selectedChapter, setSelectedChapter] = useState(1);
 
-  // ✅ Strong’s ON by default
+  // ✅ Strong’s ON by default now
   const [showStrongsNumbers, setShowStrongsNumbers] = useState(true);
   const [showInterlinear, setShowInterlinear] = useState(false);
   const [showNotes, setShowNotes] = useState(true);
@@ -30,38 +35,55 @@ export default function Home() {
   // ✅ Controls the desktop settings panel on the right
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
 
-  // ✅ When a cross-reference wants to jump to another book/chapter,
-  // we store the target ref here and let BibleReader scroll after it loads.
-  const [pendingRef, setPendingRef] = useState<string | null>(null);
+  // ✅ Simple history of locations (like browser back/forward)
+  const [history, setHistory] = useState<Location[]>([
+    { book: 'John', chapter: 1 },
+  ]);
+  const [historyIndex, setHistoryIndex] = useState(0);
 
-  // Listen for global navigation events dispatched from NoteEditor
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const custom = event as CustomEvent<{
-        book: string;
-        chapter: number;
-        verse?: number;
-      }>;
+  const canGoBack = historyIndex > 0;
+  const canGoForward = historyIndex < history.length - 1;
 
-      const detail = custom.detail;
-      if (!detail) return;
+  // Centralized navigation so everything goes through here
+  const navigateTo = (book: string, chapter: number, opts?: { fromHistory?: boolean }) => {
+    // Update current view
+    setSelectedBook(book);
+    setSelectedChapter(chapter);
 
-      const { book, chapter, verse } = detail;
+    // If this came from back/forward, don't re-push into history
+    if (opts?.fromHistory) return;
 
-      // Switch book/chapter first
-      setSelectedBook(book);
-      setSelectedChapter(chapter);
+    setHistory(prev => {
+      // Trim forward history if we've gone back in time
+      const trimmed = prev.slice(0, historyIndex + 1);
+      const last = trimmed[trimmed.length - 1];
 
-      // This must match data-ref in BibleReader: `${book} ${chapter}:${verse}`
-      const refStr = `${book} ${chapter}:${verse ?? 1}`;
-      setPendingRef(refStr);
-    };
+      // If we're already at this location, don't duplicate
+      if (last && last.book === book && last.chapter === chapter) {
+        return trimmed;
+      }
 
-    window.addEventListener('bible:navigate', handler as EventListener);
-    return () => {
-      window.removeEventListener('bible:navigate', handler as EventListener);
-    };
-  }, []);
+      const next = [...trimmed, { book, chapter }];
+      setHistoryIndex(next.length - 1);
+      return next;
+    });
+  };
+
+  const goBack = () => {
+    if (!canGoBack) return;
+    const newIndex = historyIndex - 1;
+    const entry = history[newIndex];
+    setHistoryIndex(newIndex);
+    navigateTo(entry.book, entry.chapter, { fromHistory: true });
+  };
+
+  const goForward = () => {
+    if (!canGoForward) return;
+    const newIndex = historyIndex + 1;
+    const entry = history[newIndex];
+    setHistoryIndex(newIndex);
+    navigateTo(entry.book, entry.chapter, { fromHistory: true });
+  };
 
   const style = {
     "--sidebar-width": "18rem",
@@ -73,18 +95,38 @@ export default function Home() {
         <AppSidebar
           selectedBook={selectedBook}
           selectedChapter={selectedChapter}
-          onSelectBook={setSelectedBook}
-          onSelectChapter={setSelectedChapter}
+          onSelectBook={(book) => navigateTo(book, selectedChapter)}
+          onSelectChapter={(chapter) => navigateTo(selectedBook, chapter)}
         />
         
         <div className="flex flex-col flex-1 overflow-hidden">
           <header className="flex items-center justify-between px-4 py-2 border-b bg-background">
             <div className="flex items-center gap-2">
               <SidebarTrigger data-testid="button-sidebar-toggle" />
+
+              {/* ⬅️ Back / ➡️ Forward like a browser */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={goBack}
+                disabled={!canGoBack}
+                aria-label="Back"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={goForward}
+                disabled={!canGoForward}
+                aria-label="Forward"
+              >
+                <ArrowRight className="h-4 w-4" />
+              </Button>
             </div>
             
             <div className="flex items-center gap-2">
-              {/* 📱 Mobile settings (Sheet) */}
+              {/* 📱 Mobile settings (Sheet stays the same) */}
               <Sheet>
                 <SheetTrigger asChild>
                   <Button
@@ -151,13 +193,10 @@ export default function Home() {
                 fontSize={fontSize}
                 displayMode={displayMode}
                 selectedTranslation={selectedTranslation}
-                // 🔗 Let BibleReader scroll to the verse after load
-                scrollToRef={pendingRef}
-                onRefHandled={() => setPendingRef(null)}
               />
             </div>
 
-            {/* 🧰 Desktop ToolsPanel – toggleable */}
+            {/* 🧰 Desktop ToolsPanel – now toggleable */}
             {showSettingsPanel && (
               <div className="hidden md:block w-80 border-l overflow-auto">
                 <ToolsPanel
