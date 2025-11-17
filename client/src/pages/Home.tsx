@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AppSidebar } from '@/components/AppSidebar';
 import { BibleReader } from '@/components/BibleReader';
 import { ToolsPanel } from '@/components/ToolsPanel';
@@ -19,7 +19,7 @@ export default function Home() {
   const [selectedBook, setSelectedBook] = useState('John');
   const [selectedChapter, setSelectedChapter] = useState(1);
 
-  // ✅ Strong’s ON by default now
+  // ✅ Strong’s ON by default
   const [showStrongsNumbers, setShowStrongsNumbers] = useState(true);
   const [showInterlinear, setShowInterlinear] = useState(false);
   const [showNotes, setShowNotes] = useState(true);
@@ -29,6 +29,39 @@ export default function Home() {
 
   // ✅ Controls the desktop settings panel on the right
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+
+  // ✅ When a cross-reference wants to jump to another book/chapter,
+  // we store the target ref here and let BibleReader scroll after it loads.
+  const [pendingRef, setPendingRef] = useState<string | null>(null);
+
+  // Listen for global navigation events dispatched from NoteEditor
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const custom = event as CustomEvent<{
+        book: string;
+        chapter: number;
+        verse?: number;
+      }>;
+
+      const detail = custom.detail;
+      if (!detail) return;
+
+      const { book, chapter, verse } = detail;
+
+      // Switch book/chapter first
+      setSelectedBook(book);
+      setSelectedChapter(chapter);
+
+      // This must match data-ref in BibleReader: `${book} ${chapter}:${verse}`
+      const refStr = `${book} ${chapter}:${verse ?? 1}`;
+      setPendingRef(refStr);
+    };
+
+    window.addEventListener('bible:navigate', handler as EventListener);
+    return () => {
+      window.removeEventListener('bible:navigate', handler as EventListener);
+    };
+  }, []);
 
   const style = {
     "--sidebar-width": "18rem",
@@ -51,7 +84,7 @@ export default function Home() {
             </div>
             
             <div className="flex items-center gap-2">
-              {/* 📱 Mobile settings (Sheet stays the same) */}
+              {/* 📱 Mobile settings (Sheet) */}
               <Sheet>
                 <SheetTrigger asChild>
                   <Button
@@ -118,10 +151,13 @@ export default function Home() {
                 fontSize={fontSize}
                 displayMode={displayMode}
                 selectedTranslation={selectedTranslation}
+                // 🔗 Let BibleReader scroll to the verse after load
+                scrollToRef={pendingRef}
+                onRefHandled={() => setPendingRef(null)}
               />
             </div>
 
-            {/* 🧰 Desktop ToolsPanel – now toggleable */}
+            {/* 🧰 Desktop ToolsPanel – toggleable */}
             {showSettingsPanel && (
               <div className="hidden md:block w-80 border-l overflow-auto">
                 <ToolsPanel
