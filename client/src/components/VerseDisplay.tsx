@@ -22,9 +22,8 @@ interface VerseDisplayProps {
   wordHighlights: Highlight[];
   showStrongsNumbers: boolean;
   showInterlinear: boolean;
-  // 🔹 Optional so it doesn't break if parent hasn't wired it yet
-  showStrongsEnglishOnly?: boolean; // only show tokens that have Strong's
-  hideAllEnglish?: boolean; // hide ALL English words (even Strong's tokens)
+  showStrongsEnglishOnly?: boolean; // only show tokens with Strong's
+  hideAllEnglish?: boolean; // hide all English words
   showNotes: boolean;
   displayMode: "verse" | "book";
   showWordByWord: boolean;
@@ -70,13 +69,13 @@ export function VerseDisplay(props: VerseDisplayProps) {
     showWordByWord,
     onAddNote,
     onAddWordNote,
-    onSaveWordNote, // not used directly here but kept for prop compatibility
-    onCancelWordNote,
+    onSaveWordNote, // not used directly, but kept for typing
+    onCancelWordNote, // not used directly, but kept for typing
     onHighlightWord,
     onTextSelect,
     onStrongClick,
     wordNotes,
-    activeWordNote,
+    activeWordNote, // not used directly, but available if you want to style the active one
     activeStrongNumber,
   } = props;
 
@@ -110,7 +109,6 @@ export function VerseDisplay(props: VerseDisplayProps) {
   const getLemmaForToken = (token: any): string | null => {
     if (!showInterlinear) return null;
 
-    // Prefer Strong's -> lemma from strongsData; fall back to token.original
     const strongKey = Array.isArray(token.strongs)
       ? token.strongs?.[0]
       : token.strongs;
@@ -123,7 +121,7 @@ export function VerseDisplay(props: VerseDisplayProps) {
     return token.original || null;
   };
 
-  // BOOK MODE, plain text (no word-by-word)
+  // BOOK MODE, plain text
   if (displayMode === "book" && !showWordByWord) {
     return (
       <span
@@ -145,7 +143,7 @@ export function VerseDisplay(props: VerseDisplayProps) {
         onMouseUp={handleMouseUp}
       >
         {verseWithTokens.tokens!.map((token, idx) => {
-          // 🔹 Strong's English-only: completely hide tokens without Strong's
+          // Strong's English-only → skip tokens without Strong's
           if (showStrongsEnglishOnly && !token.strongs) {
             return null;
           }
@@ -171,14 +169,14 @@ export function VerseDisplay(props: VerseDisplayProps) {
                     className="inline-flex flex-col items-center gap-0.5 group cursor-pointer relative"
                     data-testid={`word-${verse.id}-${idx}`}
                   >
-                    {/* 🔹 Greek lemma on top (if interlinear ON) */}
+                    {/* Greek lemma on top */}
                     {lemma && (
                       <span className="text-sm italic font-serif text-foreground">
                         {lemma}
                       </span>
                     )}
 
-                    {/* 🔹 Strong's numbers */}
+                    {/* Strong's numbers */}
                     {showStrongsNumbers && token.strongs && (
                       <div className="flex gap-1 flex-wrap justify-center">
                         {(Array.isArray(token.strongs)
@@ -214,7 +212,7 @@ export function VerseDisplay(props: VerseDisplayProps) {
                       </div>
                     )}
 
-                    {/* 🔹 English (only if not globally hidden) */}
+                    {/* English (if not globally hidden) */}
                     {showEnglishWord && (
                       <span
                         className={[
@@ -329,7 +327,7 @@ export function VerseDisplay(props: VerseDisplayProps) {
               data-testid={`verse-${verse.id}`}
             >
               {verseWithTokens.tokens!.map((token, idx) => {
-                // 🔹 Strong's English-only: completely hide tokens without Strong's
+                // Strong's English-only → skip tokens without Strong's
                 if (showStrongsEnglishOnly && !token.strongs) {
                   return null;
                 }
@@ -355,14 +353,14 @@ export function VerseDisplay(props: VerseDisplayProps) {
                           className="inline-flex flex-col items-center gap-0.5 group/word cursor-pointer relative"
                           data-testid={`word-${verse.id}-${idx}`}
                         >
-                          {/* 🔹 Greek lemma on top (if interlinear ON) */}
+                          {/* Greek lemma on top */}
                           {lemma && (
                             <span className="text-sm italic font-serif text-foreground">
                               {lemma}
                             </span>
                           )}
 
-                          {/* 🔹 Strong's numbers */}
+                          {/* Strong's numbers */}
                           {showStrongsNumbers && token.strongs && (
                             <div className="flex gap-1 flex-wrap justify-center">
                               {(Array.isArray(token.strongs)
@@ -398,7 +396,7 @@ export function VerseDisplay(props: VerseDisplayProps) {
                             </div>
                           )}
 
-                          {/* 🔹 English (only if not globally hidden) */}
+                          {/* English (if not globally hidden) */}
                           {showEnglishWord && (
                             <span
                               className={[
