@@ -22,7 +22,7 @@ interface VerseDisplayProps {
   wordHighlights: Highlight[];
   showStrongsNumbers: boolean;
   showInterlinear: boolean;
-  hideEnglish: boolean;
+  showStrongsEnglishOnly: boolean;
   showNotes: boolean;
   displayMode: "verse" | "book";
   showWordByWord: boolean;
@@ -56,7 +56,7 @@ export function VerseDisplay({
   wordHighlights,
   showStrongsNumbers,
   showInterlinear,
-  hideEnglish,
+  showStrongsEnglishOnly,
   showNotes,
   displayMode,
   showWordByWord,
@@ -113,8 +113,8 @@ export function VerseDisplay({
     );
   }
 
-  // Helper to render a single token block (used in both book + verse modes)
-  const renderToken = (token: any, idx: number, isBookMode = false) => {
+  // Helper to render a single token block
+  const renderToken = (token: any, idx: number) => {
     const strongKey = token.strongs
       ? Array.isArray(token.strongs)
         ? token.strongs[0]
@@ -128,9 +128,10 @@ export function VerseDisplay({
       token.original ||
       null;
 
-    const hasData =
-      (showStrongsNumbers && token.strongs) ||
-      (showInterlinear && lemma);
+    const gloss =
+      (strongData && (strongData as any).definition) ||
+      (strongData && (strongData as any).usage) ||
+      null;
 
     const wordNote = showNotes ? getWordNote(idx) : undefined;
     const wordHighlight = getWordHighlight(idx);
@@ -139,6 +140,9 @@ export function VerseDisplay({
       : "";
 
     const strongActive = isTokenStrongActive(token.strongs);
+
+    // When we’re in “Strong’s English only” mode, hide the normal verse English
+    const showVerseEnglish = !showStrongsEnglishOnly;
 
     return (
       <div
@@ -151,20 +155,27 @@ export function VerseDisplay({
               className="inline-flex flex-col items-center gap-0.5 group/word cursor-pointer relative"
               data-testid={`word-${verse.id}-${idx}`}
             >
-              {/* 🔹 1) Lemma (Greek) – TOP */}
-              {showInterlinear && lemma && (
+              {/* 1) Lemma (Greek) – top when interlinear or Strong’s English only */}
+              {(showInterlinear || showStrongsEnglishOnly) && lemma && (
                 <span className="text-sm italic text-muted-foreground font-serif">
                   {lemma}
                 </span>
               )}
 
-              {/* 🔹 2) English word (hidden when hideEnglish = true) */}
-              {!hideEnglish && (
+              {/* 2) Strong’s English gloss – only when that mode is on */}
+              {showStrongsEnglishOnly && gloss && (
+                <span className="text-xs text-foreground/90 font-medium text-center max-w-[140px]">
+                  {gloss}
+                </span>
+              )}
+
+              {/* 3) Normal verse English (hidden when Strong’s English only is on) */}
+              {showVerseEnglish && (
                 <span
                   className={[
                     "font-serif text-base rounded transition-colors",
-                    hasData ? "px-1" : "",
                     wordHighlightClass,
+                    "px-1",
                     strongActive
                       ? "ring-2 ring-primary/60 bg-primary/10"
                       : "",
@@ -176,7 +187,7 @@ export function VerseDisplay({
                 </span>
               )}
 
-              {/* 🔹 3) Strong's numbers – BELOW lemma now */}
+              {/* 4) Strong’s numbers */}
               {showStrongsNumbers && token.strongs && (
                 <div className="flex gap-1 flex-wrap justify-center">
                   {(Array.isArray(token.strongs)
@@ -205,13 +216,6 @@ export function VerseDisplay({
                     </Tooltip>
                   ))}
                 </div>
-              )}
-
-              {/* Fallback: if hideEnglish is true AND no lemma is shown, show English faint so it’s not blank */}
-              {hideEnglish && !showInterlinear && (
-                <span className="font-serif text-base rounded px-1 opacity-60">
-                  {token.english}
-                </span>
               )}
             </div>
           </PopoverTrigger>
@@ -298,7 +302,7 @@ export function VerseDisplay({
         onMouseUp={handleMouseUp}
       >
         {verseWithTokens.tokens!.map((token, idx) =>
-          renderToken(token, idx, true)
+          renderToken(token, idx)
         )}
       </div>
     );
@@ -324,7 +328,7 @@ export function VerseDisplay({
               data-testid={`verse-${verse.id}`}
             >
               {verseWithTokens.tokens!.map((token, idx) =>
-                renderToken(token, idx, false)
+                renderToken(token, idx)
               )}
             </div>
           ) : (
