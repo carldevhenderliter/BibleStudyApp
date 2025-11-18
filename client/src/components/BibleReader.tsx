@@ -22,6 +22,8 @@ interface BibleReaderProps {
   fontSize: number;
   displayMode: "verse" | "book";
   selectedTranslation: Translation;
+  // NEW: hide English line when in interlinear mode
+  hideEnglishInterlinear: boolean;
   // From Home, used for cross-reference navigation
   onNavigate?: (book: string, chapter: number, verse?: number) => void;
 }
@@ -118,6 +120,7 @@ export function BibleReader({
   fontSize,
   displayMode,
   selectedTranslation,
+  hideEnglishInterlinear,
   onNavigate,
 }: BibleReaderProps) {
   const [verses, setVerses] = useState<BibleVerseWithTokens[]>([]);
@@ -207,14 +210,15 @@ export function BibleReader({
 
   const handleTextSelect = (verseId: string, text: string) => {
     const selection = window.getSelection();
-    if (selection && text) {
+    const trimmed = text.trim();
+    if (selection && trimmed) {
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
       setHighlightToolbar({
         show: true,
         position: { x: rect.left, y: rect.top },
         verseId,
-        text,
+        text: trimmed,
       });
     }
   };
@@ -361,8 +365,6 @@ export function BibleReader({
 
   /**
    * Save a *word-level* note.
-   * These always apply to a single verse, no range,
-   * but still can have theme + crossReferences + title.
    */
   const handleSaveWordNote = (
     wordIndex: number,
@@ -497,7 +499,6 @@ export function BibleReader({
   const handleStrongClick = async (verseId: string, strongNumber: string) => {
     const normalized = strongNumber.toUpperCase().trim();
 
-    // If you click the same Strong's again, close it
     if (selectedStrong && selectedStrong.strongNumber === normalized) {
       setSelectedStrong(null);
       setStrongOccurrences([]);
@@ -903,6 +904,7 @@ export function BibleReader({
                               wordHighlights={wordHighlights}
                               showStrongsNumbers={showStrongsNumbers}
                               showInterlinear={showInterlinear}
+                              hideEnglishInterlinear={hideEnglishInterlinear}
                               showNotes={showNotes}
                               displayMode={displayMode}
                               showWordByWord={showWordByWord}
@@ -912,7 +914,11 @@ export function BibleReader({
                               onAddWordNote={(wordIndex, wordText) =>
                                 handleAddWordNote(v.id, wordIndex, wordText)
                               }
-                              onSaveWordNote={(wordIndex, content, options) =>
+                              onSaveWordNote={(
+                                wordIndex,
+                                content,
+                                options
+                              ) =>
                                 handleSaveWordNote(
                                   wordIndex,
                                   content,
@@ -964,7 +970,7 @@ export function BibleReader({
                         note={rangeNote}
                         verseId={rangeNote.verseId}
                         verseReference={rangeRef}
-                        enableRange={false} // range already set
+                        enableRange={false}
                         onSave={(content, opts) =>
                           handleUpdateNote(rangeNote.id, content, {
                             theme: opts?.theme,
@@ -998,14 +1004,12 @@ export function BibleReader({
                             enableRange={addingNote.wordIndex === undefined}
                             onSave={(content, opts) => {
                               if (addingNote.wordIndex !== undefined) {
-                                // word note within this group
                                 handleSaveWordNote(
                                   addingNote.wordIndex,
                                   content,
                                   opts
                                 );
                               } else {
-                                // verse-level note: optionally range + theme + refs + title
                                 handleSaveNote(content, opts);
                               }
                               setAddingNote(null);
@@ -1041,7 +1045,6 @@ export function BibleReader({
               const anchorVerse = verses.find((v) => v.id === n.verseId);
               if (!anchorVerse) return false;
 
-              // If it has a range > 1, it's handled above in rangeNoteMap
               if (
                 typeof rn.startVerse === "number" &&
                 typeof rn.endVerse === "number" &&
@@ -1096,6 +1099,7 @@ export function BibleReader({
                     wordHighlights={wordHighlights}
                     showStrongsNumbers={showStrongsNumbers}
                     showInterlinear={showInterlinear}
+                    hideEnglishInterlinear={hideEnglishInterlinear}
                     showNotes={showNotes}
                     displayMode={displayMode}
                     showWordByWord={showWordByWord}
