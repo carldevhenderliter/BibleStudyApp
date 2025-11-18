@@ -22,6 +22,7 @@ interface VerseDisplayProps {
   wordHighlights: Highlight[];
   showStrongsNumbers: boolean;
   showInterlinear: boolean;
+  hideEnglish: boolean;
   showNotes: boolean;
   displayMode: "verse" | "book";
   showWordByWord: boolean;
@@ -34,7 +35,7 @@ interface VerseDisplayProps {
   onStrongClick: (strongNumber: string) => void;
   wordNotes: Note[];
   activeWordNote: { verseId: string; wordIndex: number; wordText?: string } | null;
-  activeStrongNumber?: string; // highlight all matching Strong’s in this chapter
+  activeStrongNumber?: string;
 }
 
 const highlightColorMap = {
@@ -55,6 +56,7 @@ export function VerseDisplay({
   wordHighlights,
   showStrongsNumbers,
   showInterlinear,
+  hideEnglish,
   showNotes,
   displayMode,
   showWordByWord,
@@ -81,10 +83,6 @@ export function VerseDisplay({
 
   const highlightClass = highlight ? highlightColorMap[highlight.color] : "";
   const verseWithTokens = verse as BibleVerseWithTokens;
-
-  const hasWordNote = (wordIndex: number) => {
-    return wordNotes.some((note) => note.wordIndex === wordIndex);
-  };
 
   const getWordNote = (wordIndex: number) => {
     return wordNotes.find((note) => Number(note.wordIndex) === wordIndex);
@@ -115,6 +113,182 @@ export function VerseDisplay({
     );
   }
 
+  // Helper to render a single token block (used in both book + verse modes)
+  const renderToken = (token: any, idx: number, isBookMode = false) => {
+    const strongKey = token.strongs
+      ? Array.isArray(token.strongs)
+        ? token.strongs[0]
+        : token.strongs
+      : undefined;
+
+    const strongData = strongKey ? getStrongsDefinition(strongKey) : null;
+
+    const lemma =
+      (strongData && (strongData as any).lemma) ||
+      token.original ||
+      null;
+
+    const hasData =
+      (showStrongsNumbers && token.strongs) ||
+      (showInterlinear && lemma);
+
+    const wordNote = showNotes ? getWordNote(idx) : undefined;
+    const wordHighlight = getWordHighlight(idx);
+    const wordHighlightClass = wordHighlight
+      ? highlightColorMap[wordHighlight.color]
+      : "";
+
+    const strongActive = isTokenStrongActive(token.strongs);
+
+    return (
+      <div
+        key={idx}
+        className="inline-flex flex-col items-center gap-1"
+      >
+        <Popover>
+          <PopoverTrigger asChild>
+            <div
+              className="inline-flex flex-col items-center gap-0.5 group/word cursor-pointer relative"
+              data-testid={`word-${verse.id}-${idx}`}
+            >
+              {/* English word (hidden when hideEnglish = true) */}
+              {!hideEnglish && (
+                <span
+                  className={[
+                    "font-serif text-base rounded transition-colors",
+                    hasData ? "px-1" : "",
+                    wordHighlightClass,
+                    strongActive
+                      ? "ring-2 ring-primary/60 bg-primary/10"
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  {token.english}
+                </span>
+              )}
+
+              {/* Strong's numbers */}
+              {showStrongsNumbers && token.strongs && (
+                <div className="flex gap-1 flex-wrap justify-center">
+                  {(Array.isArray(token.strongs)
+                    ? token.strongs
+                    : [token.strongs]
+                  ).map((strongNum: string, sIdx: number) => (
+                    <Tooltip key={sIdx}>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onStrongClick(strongNum);
+                          }}
+                          className="text-xs text-primary cursor-pointer font-mono hover-elevate active-elevate-2 px-1 rounded"
+                          data-testid={`button-strong-${strongNum}`}
+                        >
+                          {strongNum}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="text-xs">
+                          Strong&apos;s {strongNum} - Click to view definition
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  ))}
+                </div>
+              )}
+
+              {/* Interlinear: lemma from Strong's (or original) */}
+              {showInterlinear && lemma && (
+                <span className="text-sm italic text-muted-foreground font-serif">
+                  {lemma}
+                </span>
+              )}
+
+              {/* If hideEnglish is true AND we have no lemma, show English anyway so it’s not blank */}
+              {hideEnglish && !showInterlinear && (
+                <span className="font-serif text-base rounded px-1 opacity-60">
+                  {token.english}
+                </span>
+              )}
+            </div>
+          </PopoverTrigger>
+          <PopoverContent
+            className="w-56 p-2 space-y-2"
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            {showNotes && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="w-full justify-start"
+                onClick={() => onAddWordNote(idx, token.english)}
+                data-testid={`button-add-word-note-${verse.id}-${idx}`}
+              >
+                <StickyNote className="h-3 w-3 mr-2" />
+                {wordNote ? "View/Edit Note" : "Add Note"}
+              </Button>
+            )}
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground px-2">
+                Highlight Color:
+              </div>
+              <div className="flex gap-1 flex-wrap px-2">
+                {(
+                  [
+                    "yellow",
+                    "blue",
+                    "green",
+                    "pink",
+                    "purple",
+                    "orange",
+                    "red",
+                    "cyan",
+                    "gray",
+                  ] as const
+                ).map((color) => (
+                  <button
+                    key={color}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onHighlightWord(idx, token.english, color);
+                    }}
+                    onMouseDown={(e) => e.preventDefault()}
+                    className={`w-6 h-6 rounded ${
+                      highlightColorMap[color]
+                    } border-2 ${
+                      wordHighlight?.color === color
+                        ? "border-foreground"
+                        : "border-transparent"
+                    } hover:scale-110 transition-transform`}
+                    data-testid={`button-highlight-${color}-${verse.id}-${idx}`}
+                    aria-label={`Highlight ${color}`}
+                  />
+                ))}
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        {showNotes && wordNote && (
+          <div
+            className="text-xs text-muted-foreground bg-muted/50 border rounded px-2 py-1 max-w-[200px]"
+            data-testid={`word-note-${verse.id}-${idx}`}
+          >
+            <div className="flex items-start gap-1">
+              <StickyNote className="h-3 w-3 text-primary flex-shrink-0 mt-0.5" />
+              <span className="text-left break-words">
+                {wordNote.content}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // ===== BOOK MODE, word-by-word =====
   if (displayMode === "book" && showWordByWord) {
     return (
@@ -123,175 +297,9 @@ export function VerseDisplay({
         data-testid={`verse-${verse.id}`}
         onMouseUp={handleMouseUp}
       >
-        {verseWithTokens.tokens!.map((token, idx) => {
-          const strongKey = token.strongs
-            ? Array.isArray(token.strongs)
-              ? token.strongs[0]
-              : token.strongs
-            : undefined;
-
-          const strongData = strongKey
-            ? getStrongsDefinition(strongKey)
-            : null;
-
-          // Prefer lemma from Strong's, fall back to token.original if needed
-          const lemma =
-            (strongData && (strongData as any).lemma) ||
-            token.original ||
-            null;
-
-          const hasData =
-            (showStrongsNumbers && token.strongs) ||
-            (showInterlinear && lemma);
-
-          const wordNote = showNotes ? getWordNote(idx) : undefined;
-          const wordHighlight = getWordHighlight(idx);
-          const wordHighlightClass = wordHighlight
-            ? highlightColorMap[wordHighlight.color]
-            : "";
-
-          const strongActive = isTokenStrongActive(token.strongs);
-
-          return (
-            <div
-              key={idx}
-              className="inline-flex flex-col items-center gap-1"
-            >
-              <Popover>
-                <PopoverTrigger asChild>
-                  <div
-                    className={`inline-flex flex-col items-center gap-0.5 group cursor-pointer relative`}
-                    data-testid={`word-${verse.id}-${idx}`}
-                  >
-                    {/* English word */}
-                    <span
-                      className={[
-                        "font-serif text-base rounded transition-colors",
-                        hasData ? "px-1" : "",
-                        wordHighlightClass,
-                        strongActive
-                          ? "ring-2 ring-primary/60 bg-primary/10"
-                          : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                    >
-                      {token.english}
-                    </span>
-
-                    {/* Strong's numbers */}
-                    {showStrongsNumbers && token.strongs && (
-                      <div className="flex gap-1 flex-wrap justify-center">
-                        {(Array.isArray(token.strongs)
-                          ? token.strongs
-                          : [token.strongs]
-                        ).map((strongNum, sIdx) => (
-                          <Tooltip key={sIdx}>
-                            <TooltipTrigger asChild>
-                              <button
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  onStrongClick(strongNum);
-                                }}
-                                className="text-xs text-primary cursor-pointer font-mono hover-elevate active-elevate-2 px-1 rounded"
-                                data-testid={`button-strong-${strongNum}`}
-                              >
-                                {strongNum}
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p className="text-xs">
-                                Strong&apos;s {strongNum} - Click to view
-                                definition
-                              </p>
-                            </TooltipContent>
-                          </Tooltip>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Interlinear: Greek lemma from Strong's (fallback to token.original) */}
-                    {showInterlinear && lemma && (
-                      <span className="text-sm italic text-muted-foreground font-serif">
-                        {lemma}
-                      </span>
-                    )}
-                  </div>
-                </PopoverTrigger>
-                <PopoverContent
-                  className="w-56 p-2 space-y-2"
-                  onOpenAutoFocus={(e) => e.preventDefault()}
-                >
-                  {showNotes && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="w-full justify-start"
-                      onClick={() => onAddWordNote(idx, token.english)}
-                      data-testid={`button-add-word-note-${verse.id}-${idx}`}
-                    >
-                      <StickyNote className="h-3 w-3 mr-2" />
-                      {wordNote ? "View/Edit Note" : "Add Note"}
-                    </Button>
-                  )}
-                  <div className="space-y-1">
-                    <div className="text-xs text-muted-foreground px-2">
-                      Highlight Color:
-                    </div>
-                    <div className="flex gap-1 flex-wrap px-2">
-                      {(
-                        [
-                          "yellow",
-                          "blue",
-                          "green",
-                          "pink",
-                          "purple",
-                          "orange",
-                          "red",
-                          "cyan",
-                          "gray",
-                        ] as const
-                      ).map((color) => (
-                        <button
-                          key={color}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            onHighlightWord(idx, token.english, color);
-                          }}
-                          onMouseDown={(e) => e.preventDefault()}
-                          className={`w-6 h-6 rounded ${
-                            highlightColorMap[color]
-                          } border-2 ${
-                            wordHighlight?.color === color
-                              ? "border-foreground"
-                              : "border-transparent"
-                          } hover:scale-110 transition-transform`}
-                          data-testid={`button-highlight-${color}-${verse.id}-${idx}`}
-                          aria-label={`Highlight ${color}`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
-
-              {showNotes && wordNote && (
-                <div
-                  className="text-xs text-muted-foreground bg-muted/50 border rounded px-2 py-1 max-w-[200px]"
-                  data-testid={`word-note-${verse.id}-${idx}`}
-                >
-                  <div className="flex items-start gap-1">
-                    <StickyNote className="h-3 w-3 text-primary flex-shrink-0 mt-0.5" />
-                    <span className="text-left break-words">
-                      {wordNote.content}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {verseWithTokens.tokens!.map((token, idx) =>
+          renderToken(token, idx, true)
+        )}
       </div>
     );
   }
@@ -315,174 +323,9 @@ export function VerseDisplay({
               className="flex flex-wrap gap-x-3 gap-y-6"
               data-testid={`verse-${verse.id}`}
             >
-              {verseWithTokens.tokens!.map((token, idx) => {
-                const strongKey = token.strongs
-                  ? Array.isArray(token.strongs)
-                    ? token.strongs[0]
-                    : token.strongs
-                  : undefined;
-
-                const strongData = strongKey
-                  ? getStrongsDefinition(strongKey)
-                  : null;
-
-                const lemma =
-                  (strongData && (strongData as any).lemma) ||
-                  token.original ||
-                  null;
-
-                const hasData =
-                  (showStrongsNumbers && token.strongs) ||
-                  (showInterlinear && lemma);
-
-                const wordNote = showNotes ? getWordNote(idx) : undefined;
-                const wordHighlight = getWordHighlight(idx);
-                const wordHighlightClass = wordHighlight
-                  ? highlightColorMap[wordHighlight.color]
-                  : "";
-
-                const strongActive = isTokenStrongActive(token.strongs);
-
-                return (
-                  <div
-                    key={idx}
-                    className="inline-flex flex-col items-center gap-1"
-                  >
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <div
-                          className="inline-flex flex-col items-center gap-0.5 group/word cursor-pointer relative"
-                          data-testid={`word-${verse.id}-${idx}`}
-                        >
-                          {/* English word */}
-                          <span
-                            className={[
-                              "font-serif text-base rounded transition-colors",
-                              hasData ? "px-1" : "",
-                              wordHighlightClass,
-                              strongActive
-                                ? "ring-2 ring-primary/60 bg-primary/10"
-                                : "",
-                            ]
-                              .filter(Boolean)
-                              .join(" ")}
-                          >
-                            {token.english}
-                          </span>
-
-                          {/* Strong's numbers */}
-                          {showStrongsNumbers && token.strongs && (
-                            <div className="flex gap-1 flex-wrap justify-center">
-                              {(Array.isArray(token.strongs)
-                                ? token.strongs
-                                : [token.strongs]
-                              ).map((strongNum, sIdx) => (
-                                <Tooltip key={sIdx}>
-                                  <TooltipTrigger asChild>
-                                    <button
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        onStrongClick(strongNum);
-                                      }}
-                                      className="text-xs text-primary cursor-pointer font-mono hover-elevate active-elevate-2 px-1 rounded"
-                                      data-testid={`button-strong-${strongNum}`}
-                                    >
-                                      {strongNum}
-                                    </button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p className="text-xs">
-                                      Strong&apos;s {strongNum} - Click to view
-                                      definition
-                                    </p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Interlinear: lemma from Strong's */}
-                          {showInterlinear && lemma && (
-                            <span className="text-sm italic text-muted-foreground font-serif">
-                              {lemma}
-                            </span>
-                          )}
-                        </div>
-                      </PopoverTrigger>
-                      <PopoverContent
-                        className="w-56 p-2 space-y-2"
-                        onOpenAutoFocus={(e) => e.preventDefault()}
-                      >
-                        {showNotes && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="w-full justify-start"
-                            onClick={() => onAddWordNote(idx, token.english)}
-                            data-testid={`button-add-word-note-${verse.id}-${idx}`}
-                          >
-                            <StickyNote className="h-3 w-3 mr-2" />
-                            {wordNote ? "View/Edit Note" : "Add Note"}
-                          </Button>
-                        )}
-                        <div className="space-y-1">
-                          <div className="text-xs text-muted-foreground px-2">
-                            Highlight Color:
-                          </div>
-                          <div className="flex gap-1 flex-wrap px-2">
-                            {(
-                              [
-                                "yellow",
-                                "blue",
-                                "green",
-                                "pink",
-                                "purple",
-                                "orange",
-                                "red",
-                                "cyan",
-                                "gray",
-                              ] as const
-                            ).map((color) => (
-                              <button
-                                key={color}
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  onHighlightWord(idx, token.english, color);
-                                }}
-                                onMouseDown={(e) => e.preventDefault()}
-                                className={`w-6 h-6 rounded ${
-                                  highlightColorMap[color]
-                                } border-2 ${
-                                  wordHighlight?.color === color
-                                    ? "border-foreground"
-                                    : "border-transparent"
-                                } hover:scale-110 transition-transform`}
-                                data-testid={`button-highlight-${color}-${verse.id}-${idx}`}
-                                aria-label={`Highlight ${color}`}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-
-                    {showNotes && wordNote && (
-                      <div
-                        className="text-xs text-muted-foreground bg-muted/50 border rounded px-2 py-1 max-w-[200px]"
-                        data-testid={`word-note-${verse.id}-${idx}`}
-                      >
-                        <div className="flex items-start gap-1">
-                          <StickyNote className="h-3 w-3 text-primary flex-shrink-0 mt-0.5" />
-                          <span className="text-left break-words">
-                            {wordNote.content}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              {verseWithTokens.tokens!.map((token, idx) =>
+                renderToken(token, idx, false)
+              )}
             </div>
           ) : (
             <span
