@@ -14,7 +14,38 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { BibleVerseWithTokens } from "@/lib/bibleData";
-import { NoteSaveOptions } from "./NoteEditor";
+
+// ⬇️ Use the SAME path you use in StrongDefinitionInline
+//    (if that file imports from "@/data/strongs.json", do the same here)
+import strongsLexicon from "@/data/strongs.json";
+
+type StrongLexEntry = {
+  lemma?: string;
+  transliteration?: string;
+  gloss?: string;
+};
+
+const STRONGS = strongsLexicon as Record<string, StrongLexEntry>;
+
+function getLemmaFromStrongs(
+  strongNumber: string | string[] | undefined
+): string | null {
+  if (!strongNumber) return null;
+
+  // If multiple Strong’s numbers, just use the first for the lemma
+  const raw =
+    typeof strongNumber === "string" ? strongNumber : strongNumber[0] ?? "";
+  if (!raw) return null;
+
+  const normalized = raw.toUpperCase().trim();
+
+  // Try exact match, then try stripping leading zeros (G0305 -> G305)
+  const entry =
+    STRONGS[normalized] ??
+    STRONGS[normalized.replace(/^([GH])0+/, "$1")];
+
+  return entry?.lemma ?? null;
+}
 
 interface VerseDisplayProps {
   verse: BibleVerse;
@@ -22,17 +53,12 @@ interface VerseDisplayProps {
   wordHighlights: Highlight[];
   showStrongsNumbers: boolean;
   showInterlinear: boolean;
-  hideEnglishInterlinear: boolean;
   showNotes: boolean;
   displayMode: "verse" | "book";
   showWordByWord: boolean;
   onAddNote: () => void;
   onAddWordNote: (wordIndex: number, wordText: string) => void;
-  onSaveWordNote: (
-    wordIndex: number,
-    content: string,
-    options?: NoteSaveOptions
-  ) => void;
+  onSaveWordNote: (wordIndex: number, content: string) => void;
   onCancelWordNote: () => void;
   onHighlightWord: (wordIndex: number, wordText: string, color: string) => void;
   onTextSelect: (text: string) => void;
@@ -43,7 +69,7 @@ interface VerseDisplayProps {
     wordIndex: number;
     wordText?: string;
   } | null;
-  activeStrongNumber?: string;
+  activeStrongNumber?: string; // highlight all matching Strong’s in this chapter (optional)
 }
 
 const highlightColorMap = {
@@ -64,14 +90,13 @@ export function VerseDisplay({
   wordHighlights,
   showStrongsNumbers,
   showInterlinear,
-  hideEnglishInterlinear,
   showNotes,
   displayMode,
   showWordByWord,
   onAddNote,
   onAddWordNote,
-  onSaveWordNote, // currently not used inside, but typed correctly
-  onCancelWordNote, // currently not used here
+  onSaveWordNote,
+  onCancelWordNote,
   onHighlightWord,
   onTextSelect,
   onStrongClick,
@@ -90,6 +115,7 @@ export function VerseDisplay({
   };
 
   const highlightClass = highlight ? highlightColorMap[highlight.color] : "";
+
   const verseWithTokens = verse as BibleVerseWithTokens;
 
   const hasWordNote = (wordIndex: number) => {
@@ -110,12 +136,6 @@ export function VerseDisplay({
       return tokenStrong.includes(activeStrongNumber);
     }
     return tokenStrong === activeStrongNumber;
-  };
-
-  const shouldShowEnglishForInterlinear = (showInterlinear: boolean) => {
-    // If we are in interlinear AND user chose to hide English → hide it
-    if (showInterlinear && hideEnglishInterlinear) return false;
-    return true;
   };
 
   // BOOK MODE, plain text
@@ -142,7 +162,7 @@ export function VerseDisplay({
         {verseWithTokens.tokens!.map((token, idx) => {
           const hasData =
             (showStrongsNumbers && token.strongs) ||
-            (showInterlinear && token.original);
+            (showInterlinear && (token.original || token.strongs));
           const wordNote = showNotes ? getWordNote(idx) : undefined;
           const wordHighlight = getWordHighlight(idx);
           const wordHighlightClass = wordHighlight
@@ -151,29 +171,34 @@ export function VerseDisplay({
 
           const strongActive = isTokenStrongActive(token.strongs);
 
-          const showEnglish = shouldShowEnglishForInterlinear(showInterlinear);
+          const lemma =
+            getLemmaFromStrongs(token.strongs) ?? token.original ?? "";
 
           return (
-            <div
-              key={idx}
-              className="inline-flex flex-col items-center gap-1"
-            >
+            <div key={idx} className="inline-flex flex-col items-center gap-1">
               <Popover>
                 <PopoverTrigger asChild>
                   <div
-                    className={`inline-flex flex-col items-center gap-0.5 group cursor-pointer relative ${
-                      strongActive ? "ring-2 ring-primary/60 rounded-md" : ""
-                    }`}
+                    className={`inline-flex flex-col items-center gap-0.5 group cursor-pointer relative`}
                     data-testid={`word-${verse.id}-${idx}`}
                   >
-                    {/* Greek (original) on top when interlinear */}
-                    {showInterlinear && token.original && (
-                      <span className="text-sm italic text-primary font-serif">
-                        {token.original}
-                      </span>
-                    )}
+                    {/* English surface form */}
+                    <span
+                      className={[
+                        "font-serif text-base rounded transition-colors",
+                        hasData ? "px-1" : "",
+                        wordHighlightClass,
+                        strongActive
+                          ? "ring-2 ring-primary/60 bg-primary/10"
+                          : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
+                      {token.english}
+                    </span>
 
-                    {/* Strong's numbers (only when showStrongsNumbers is on) */}
+                    {/* Strong’s numbers (if toggled on) */}
                     {showStrongsNumbers && token.strongs && (
                       <div className="flex gap-1 flex-wrap justify-center">
                         {(Array.isArray(token.strongs)
@@ -205,18 +230,10 @@ export function VerseDisplay({
                       </div>
                     )}
 
-                    {/* English line (hidden if interlinear + hideEnglishInterlinear) */}
-                    {showEnglish && (
-                      <span
-                        className={[
-                          "font-serif text-base rounded transition-colors",
-                          hasData ? "px-1" : "",
-                          wordHighlightClass,
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                      >
-                        {token.english}
+                    {/* Interlinear line: lemma from Strong’s (fallback to token.original) */}
+                    {showInterlinear && lemma && (
+                      <span className="text-sm italic text-muted-foreground font-serif">
+                        {lemma}
                       </span>
                     )}
                   </div>
@@ -320,7 +337,7 @@ export function VerseDisplay({
               {verseWithTokens.tokens!.map((token, idx) => {
                 const hasData =
                   (showStrongsNumbers && token.strongs) ||
-                  (showInterlinear && token.original);
+                  (showInterlinear && (token.original || token.strongs));
                 const wordNote = showNotes ? getWordNote(idx) : undefined;
                 const wordHighlight = getWordHighlight(idx);
                 const wordHighlightClass = wordHighlight
@@ -328,9 +345,9 @@ export function VerseDisplay({
                   : "";
 
                 const strongActive = isTokenStrongActive(token.strongs);
-                const showEnglish = shouldShowEnglishForInterlinear(
-                  showInterlinear
-                );
+
+                const lemma =
+                  getLemmaFromStrongs(token.strongs) ?? token.original ?? "";
 
                 return (
                   <div
@@ -340,21 +357,26 @@ export function VerseDisplay({
                     <Popover>
                       <PopoverTrigger asChild>
                         <div
-                          className={`inline-flex flex-col items-center gap-0.5 group/word cursor-pointer relative ${
-                            strongActive
-                              ? "ring-2 ring-primary/60 rounded-md"
-                              : ""
-                          }`}
+                          className="inline-flex flex-col items-center gap-0.5 group/word cursor-pointer relative"
                           data-testid={`word-${verse.id}-${idx}`}
                         >
-                          {/* Greek on top when interlinear */}
-                          {showInterlinear && token.original && (
-                            <span className="text-sm italic text-primary font-serif">
-                              {token.original}
-                            </span>
-                          )}
+                          {/* English surface form */}
+                          <span
+                            className={[
+                              "font-serif text-base rounded transition-colors",
+                              hasData ? "px-1" : "",
+                              wordHighlightClass,
+                              strongActive
+                                ? "ring-2 ring-primary/60 bg-primary/10"
+                                : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                          >
+                            {token.english}
+                          </span>
 
-                          {/* Strong numbers under Greek (if enabled) */}
+                          {/* Strong’s numbers (if toggled on) */}
                           {showStrongsNumbers && token.strongs && (
                             <div className="flex gap-1 flex-wrap justify-center">
                               {(Array.isArray(token.strongs)
@@ -386,18 +408,10 @@ export function VerseDisplay({
                             </div>
                           )}
 
-                          {/* English (hidden if interlinear + hideEnglishInterlinear) */}
-                          {showEnglish && (
-                            <span
-                              className={[
-                                "font-serif text-base rounded transition-colors",
-                                hasData ? "px-1" : "",
-                                wordHighlightClass,
-                              ]
-                                .filter(Boolean)
-                                .join(" ")}
-                            >
-                              {token.english}
+                          {/* Interlinear line: lemma from Strong’s */}
+                          {showInterlinear && lemma && (
+                            <span className="text-sm italic text-muted-foreground font-serif">
+                              {lemma}
                             </span>
                           )}
                         </div>
