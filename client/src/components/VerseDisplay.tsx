@@ -151,7 +151,14 @@ export function VerseDisplay({
               className="inline-flex flex-col items-center gap-0.5 group/word cursor-pointer relative"
               data-testid={`word-${verse.id}-${idx}`}
             >
-              {/* English word (hidden when hideEnglish = true) */}
+              {/* 🔹 1) Lemma (Greek) – TOP */}
+              {showInterlinear && lemma && (
+                <span className="text-sm italic text-muted-foreground font-serif">
+                  {lemma}
+                </span>
+              )}
+
+              {/* 🔹 2) English word (hidden when hideEnglish = true) */}
               {!hideEnglish && (
                 <span
                   className={[
@@ -169,7 +176,7 @@ export function VerseDisplay({
                 </span>
               )}
 
-              {/* Strong's numbers */}
+              {/* 🔹 3) Strong's numbers – BELOW lemma now */}
               {showStrongsNumbers && token.strongs && (
                 <div className="flex gap-1 flex-wrap justify-center">
                   {(Array.isArray(token.strongs)
@@ -200,14 +207,7 @@ export function VerseDisplay({
                 </div>
               )}
 
-              {/* Interlinear: lemma from Strong's (or original) */}
-              {showInterlinear && lemma && (
-                <span className="text-sm italic text-muted-foreground font-serif">
-                  {lemma}
-                </span>
-              )}
-
-              {/* If hideEnglish is true AND we have no lemma, show English anyway so it’s not blank */}
+              {/* Fallback: if hideEnglish is true AND no lemma is shown, show English faint so it’s not blank */}
               {hideEnglish && !showInterlinear && (
                 <span className="font-serif text-base rounded px-1 opacity-60">
                   {token.english}
