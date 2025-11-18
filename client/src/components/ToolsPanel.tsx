@@ -17,6 +17,7 @@ import {
   BookOpen,
   Eye,
   StickyNote,
+  EyeOff,
 } from "lucide-react";
 import { Translation, translations } from "@/lib/bibleData";
 
@@ -24,6 +25,7 @@ interface ToolsPanelProps {
   showStrongsNumbers: boolean;
   showInterlinear: boolean;
   showStrongsEnglishOnly: boolean;
+  hideAllEnglish: boolean;
   showNotes: boolean;
   fontSize: number;
   displayMode: "verse" | "book";
@@ -31,6 +33,7 @@ interface ToolsPanelProps {
   onToggleStrongsNumbers: (value: boolean) => void;
   onToggleInterlinear: (value: boolean) => void;
   onToggleStrongsEnglishOnly: (value: boolean) => void;
+  onToggleHideAllEnglish: (value: boolean) => void;
   onToggleNotes: (value: boolean) => void;
   onFontSizeChange: (value: number) => void;
   onDisplayModeChange: (mode: "verse" | "book") => void;
@@ -41,6 +44,7 @@ export function ToolsPanel({
   showStrongsNumbers,
   showInterlinear,
   showStrongsEnglishOnly,
+  hideAllEnglish,
   showNotes,
   fontSize,
   displayMode,
@@ -48,6 +52,7 @@ export function ToolsPanel({
   onToggleStrongsNumbers,
   onToggleInterlinear,
   onToggleStrongsEnglishOnly,
+  onToggleHideAllEnglish,
   onToggleNotes,
   onFontSizeChange,
   onDisplayModeChange,
@@ -60,6 +65,7 @@ export function ToolsPanel({
         Reading Settings
       </div>
 
+      {/* Translation */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center gap-2">
@@ -70,9 +76,7 @@ export function ToolsPanel({
         <CardContent>
           <Select
             value={selectedTranslation}
-            onValueChange={(value) =>
-              onTranslationChange(value as Translation)
-            }
+            onValueChange={(value) => onTranslationChange(value as Translation)}
           >
             <SelectTrigger data-testid="select-translation">
               <SelectValue />
@@ -92,6 +96,7 @@ export function ToolsPanel({
         </CardContent>
       </Card>
 
+      {/* Display mode */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center gap-2">
@@ -121,6 +126,7 @@ export function ToolsPanel({
         </CardContent>
       </Card>
 
+      {/* Study tools */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center gap-2">
@@ -129,6 +135,7 @@ export function ToolsPanel({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Strong's numbers */}
           <div className="flex items-center justify-between">
             <Label
               htmlFor="strongs-toggle"
@@ -144,13 +151,14 @@ export function ToolsPanel({
             />
           </div>
 
+          {/* Interlinear */}
           <div className="flex items-center justify-between">
             <Label
               htmlFor="interlinear-toggle"
               className="text-sm flex items-center gap-2 cursor-pointer"
             >
               <Languages className="h-4 w-4" />
-              Interlinear (Greek above)
+              Interlinear
             </Label>
             <Switch
               id="interlinear-toggle"
@@ -160,21 +168,38 @@ export function ToolsPanel({
             />
           </div>
 
+          {/* Strong's English only */}
           <div className="flex items-center justify-between">
             <Label
-              htmlFor="strongs-english-toggle"
+              htmlFor="strongs-english-only-toggle"
               className="text-sm flex items-center gap-2 cursor-pointer"
             >
-              Strong&apos;s English only
+              Strong&apos;s only (hide non-Strong&apos;s English)
             </Label>
             <Switch
-              id="strongs-english-toggle"
+              id="strongs-english-only-toggle"
               checked={showStrongsEnglishOnly}
               onCheckedChange={onToggleStrongsEnglishOnly}
-              data-testid="switch-strongs-english-only"
             />
           </div>
 
+          {/* Hide all English */}
+          <div className="flex items-center justify-between">
+            <Label
+              htmlFor="hide-all-english-toggle"
+              className="text-sm flex items-center gap-2 cursor-pointer"
+            >
+              <EyeOff className="h-4 w-4" />
+              Hide all English (Strong&apos;s only)
+            </Label>
+            <Switch
+              id="hide-all-english-toggle"
+              checked={hideAllEnglish}
+              onCheckedChange={onToggleHideAllEnglish}
+            />
+          </div>
+
+          {/* Notes */}
           <div className="flex items-center justify-between">
             <Label
               htmlFor="notes-toggle"
@@ -193,6 +218,7 @@ export function ToolsPanel({
         </CardContent>
       </Card>
 
+      {/* Font size */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center gap-2">
