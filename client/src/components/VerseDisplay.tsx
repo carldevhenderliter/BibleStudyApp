@@ -14,6 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { BibleVerseWithTokens } from "@/lib/bibleData";
+import { getStrongsDefinition } from "@/lib/strongsData";
 
 interface VerseDisplayProps {
   verse: BibleVerse;
@@ -21,7 +22,9 @@ interface VerseDisplayProps {
   wordHighlights: Highlight[];
   showStrongsNumbers: boolean;
   showInterlinear: boolean;
-  showStrongsEnglishOnly: boolean; // 🔹 NEW: only show words that have Strong's
+  // 🔹 Optional so it doesn't break if parent hasn't wired it yet
+  showStrongsEnglishOnly?: boolean; // only show tokens that have Strong's
+  hideAllEnglish?: boolean; // hide ALL English words (even Strong's tokens)
   showNotes: boolean;
   displayMode: "verse" | "book";
   showWordByWord: boolean;
@@ -53,27 +56,30 @@ const highlightColorMap = {
   gray: "bg-gray-200/60 dark:bg-gray-500/30",
 };
 
-export function VerseDisplay({
-  verse,
-  highlight,
-  wordHighlights,
-  showStrongsNumbers,
-  showInterlinear,
-  showStrongsEnglishOnly,
-  showNotes,
-  displayMode,
-  showWordByWord,
-  onAddNote,
-  onAddWordNote,
-  onSaveWordNote, // not used directly here but kept for props compatibility
-  onCancelWordNote,
-  onHighlightWord,
-  onTextSelect,
-  onStrongClick,
-  wordNotes,
-  activeWordNote,
-  activeStrongNumber,
-}: VerseDisplayProps) {
+export function VerseDisplay(props: VerseDisplayProps) {
+  const {
+    verse,
+    highlight,
+    wordHighlights,
+    showStrongsNumbers,
+    showInterlinear,
+    showStrongsEnglishOnly = false,
+    hideAllEnglish = false,
+    showNotes,
+    displayMode,
+    showWordByWord,
+    onAddNote,
+    onAddWordNote,
+    onSaveWordNote, // not used directly here but kept for prop compatibility
+    onCancelWordNote,
+    onHighlightWord,
+    onTextSelect,
+    onStrongClick,
+    wordNotes,
+    activeWordNote,
+    activeStrongNumber,
+  } = props;
+
   const [showAddButton, setShowAddButton] = useState(false);
 
   const handleMouseUp = () => {
@@ -87,17 +93,11 @@ export function VerseDisplay({
   const highlightClass = highlight ? highlightColorMap[highlight.color] : "";
   const verseWithTokens = verse as BibleVerseWithTokens;
 
-  const hasWordNote = (wordIndex: number) => {
-    return wordNotes.some((note) => note.wordIndex === wordIndex);
-  };
+  const getWordNote = (wordIndex: number) =>
+    wordNotes.find((note) => Number(note.wordIndex) === wordIndex);
 
-  const getWordNote = (wordIndex: number) => {
-    return wordNotes.find((note) => Number(note.wordIndex) === wordIndex);
-  };
-
-  const getWordHighlight = (wordIndex: number) => {
-    return wordHighlights.find((h) => h.wordIndex === wordIndex);
-  };
+  const getWordHighlight = (wordIndex: number) =>
+    wordHighlights.find((h) => h.wordIndex === wordIndex);
 
   const isTokenStrongActive = (tokenStrong: string | string[] | undefined) => {
     if (!activeStrongNumber || !tokenStrong) return false;
@@ -105,6 +105,22 @@ export function VerseDisplay({
       return tokenStrong.includes(activeStrongNumber);
     }
     return tokenStrong === activeStrongNumber;
+  };
+
+  const getLemmaForToken = (token: any): string | null => {
+    if (!showInterlinear) return null;
+
+    // Prefer Strong's -> lemma from strongsData; fall back to token.original
+    const strongKey = Array.isArray(token.strongs)
+      ? token.strongs?.[0]
+      : token.strongs;
+
+    if (strongKey) {
+      const def = getStrongsDefinition(strongKey);
+      if (def?.lemma) return def.lemma as string;
+    }
+
+    return token.original || null;
   };
 
   // BOOK MODE, plain text (no word-by-word)
@@ -129,14 +145,11 @@ export function VerseDisplay({
         onMouseUp={handleMouseUp}
       >
         {verseWithTokens.tokens!.map((token, idx) => {
-          // 🔹 If Strong's English-only is on, skip tokens that don't have a Strong's number
+          // 🔹 Strong's English-only: completely hide tokens without Strong's
           if (showStrongsEnglishOnly && !token.strongs) {
             return null;
           }
 
-          const hasData =
-            (showStrongsNumbers && token.strongs) ||
-            (showInterlinear && token.original);
           const wordNote = showNotes ? getWordNote(idx) : undefined;
           const wordHighlight = getWordHighlight(idx);
           const wordHighlightClass = wordHighlight
@@ -144,6 +157,8 @@ export function VerseDisplay({
             : "";
 
           const strongActive = isTokenStrongActive(token.strongs);
+          const lemma = getLemmaForToken(token);
+          const showEnglishWord = !hideAllEnglish;
 
           return (
             <div
@@ -153,26 +168,17 @@ export function VerseDisplay({
               <Popover>
                 <PopoverTrigger asChild>
                   <div
-                    className={`inline-flex flex-col items-center gap-0.5 group cursor-pointer relative`}
+                    className="inline-flex flex-col items-center gap-0.5 group cursor-pointer relative"
                     data-testid={`word-${verse.id}-${idx}`}
                   >
-                    {/* English word (still shown for Strong's tokens) */}
-                    <span
-                      className={[
-                        "font-serif text-base rounded transition-colors",
-                        hasData ? "px-1" : "",
-                        wordHighlightClass,
-                        strongActive
-                          ? "ring-2 ring-primary/60 bg-primary/10"
-                          : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                    >
-                      {token.english}
-                    </span>
+                    {/* 🔹 Greek lemma on top (if interlinear ON) */}
+                    {lemma && (
+                      <span className="text-sm italic font-serif text-foreground">
+                        {lemma}
+                      </span>
+                    )}
 
-                    {/* Strong's numbers */}
+                    {/* 🔹 Strong's numbers */}
                     {showStrongsNumbers && token.strongs && (
                       <div className="flex gap-1 flex-wrap justify-center">
                         {(Array.isArray(token.strongs)
@@ -187,7 +193,11 @@ export function VerseDisplay({
                                   e.stopPropagation();
                                   onStrongClick(strongNum);
                                 }}
-                                className="text-xs text-primary cursor-pointer font-mono hover-elevate active-elevate-2 px-1 rounded"
+                                className={`text-xs text-primary cursor-pointer font-mono hover-elevate active-elevate-2 px-1 rounded ${
+                                  strongActive
+                                    ? "ring-2 ring-primary/60 bg-primary/10"
+                                    : ""
+                                }`}
                                 data-testid={`button-strong-${strongNum}`}
                               >
                                 {strongNum}
@@ -204,10 +214,20 @@ export function VerseDisplay({
                       </div>
                     )}
 
-                    {/* Original (Greek) */}
-                    {showInterlinear && token.original && (
-                      <span className="text-sm italic text-muted-foreground font-serif">
-                        {token.original}
+                    {/* 🔹 English (only if not globally hidden) */}
+                    {showEnglishWord && (
+                      <span
+                        className={[
+                          "font-serif text-base rounded transition-colors",
+                          wordHighlightClass,
+                          strongActive
+                            ? "ring-2 ring-primary/60 bg-primary/10"
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
+                        {token.english}
                       </span>
                     )}
                   </div>
@@ -309,14 +329,11 @@ export function VerseDisplay({
               data-testid={`verse-${verse.id}`}
             >
               {verseWithTokens.tokens!.map((token, idx) => {
-                // 🔹 If Strong's English-only is on, skip tokens that don't have a Strong's number
+                // 🔹 Strong's English-only: completely hide tokens without Strong's
                 if (showStrongsEnglishOnly && !token.strongs) {
                   return null;
                 }
 
-                const hasData =
-                  (showStrongsNumbers && token.strongs) ||
-                  (showInterlinear && token.original);
                 const wordNote = showNotes ? getWordNote(idx) : undefined;
                 const wordHighlight = getWordHighlight(idx);
                 const wordHighlightClass = wordHighlight
@@ -324,6 +341,8 @@ export function VerseDisplay({
                   : "";
 
                 const strongActive = isTokenStrongActive(token.strongs);
+                const lemma = getLemmaForToken(token);
+                const showEnglishWord = !hideAllEnglish;
 
                 return (
                   <div
@@ -336,23 +355,14 @@ export function VerseDisplay({
                           className="inline-flex flex-col items-center gap-0.5 group/word cursor-pointer relative"
                           data-testid={`word-${verse.id}-${idx}`}
                         >
-                          {/* English word (still shown for Strong's tokens) */}
-                          <span
-                            className={[
-                              "font-serif text-base rounded transition-colors",
-                              hasData ? "px-1" : "",
-                              wordHighlightClass,
-                              strongActive
-                                ? "ring-2 ring-primary/60 bg-primary/10"
-                                : "",
-                            ]
-                              .filter(Boolean)
-                              .join(" ")}
-                          >
-                            {token.english}
-                          </span>
+                          {/* 🔹 Greek lemma on top (if interlinear ON) */}
+                          {lemma && (
+                            <span className="text-sm italic font-serif text-foreground">
+                              {lemma}
+                            </span>
+                          )}
 
-                          {/* Strong's numbers */}
+                          {/* 🔹 Strong's numbers */}
                           {showStrongsNumbers && token.strongs && (
                             <div className="flex gap-1 flex-wrap justify-center">
                               {(Array.isArray(token.strongs)
@@ -367,7 +377,11 @@ export function VerseDisplay({
                                         e.stopPropagation();
                                         onStrongClick(strongNum);
                                       }}
-                                      className="text-xs text-primary cursor-pointer font-mono hover-elevate active-elevate-2 px-1 rounded"
+                                      className={`text-xs text-primary cursor-pointer font-mono hover-elevate active-elevate-2 px-1 rounded ${
+                                        strongActive
+                                          ? "ring-2 ring-primary/60 bg-primary/10"
+                                          : ""
+                                      }`}
                                       data-testid={`button-strong-${strongNum}`}
                                     >
                                       {strongNum}
@@ -384,10 +398,20 @@ export function VerseDisplay({
                             </div>
                           )}
 
-                          {/* Original (Greek) */}
-                          {showInterlinear && token.original && (
-                            <span className="text-sm italic text-muted-foreground font-serif">
-                              {token.original}
+                          {/* 🔹 English (only if not globally hidden) */}
+                          {showEnglishWord && (
+                            <span
+                              className={[
+                                "font-serif text-base rounded transition-colors",
+                                wordHighlightClass,
+                                strongActive
+                                  ? "ring-2 ring-primary/60 bg-primary/10"
+                                  : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
+                            >
+                              {token.english}
                             </span>
                           )}
                         </div>
