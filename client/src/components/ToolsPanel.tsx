@@ -1,40 +1,54 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
-import { Slider } from '@/components/ui/slider';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Settings2, Languages, Hash, Type, BookOpen, Eye, StickyNote } from 'lucide-react';
-import { Translation, translations } from '@/lib/bibleData';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Settings2,
+  Languages,
+  Hash,
+  Type,
+  BookOpen,
+  Eye,
+  StickyNote,
+} from "lucide-react";
+import { Translation, translations } from "@/lib/bibleData";
 
 interface ToolsPanelProps {
   showStrongsNumbers: boolean;
   showInterlinear: boolean;
+  showStrongsEnglishOnly: boolean;
   showNotes: boolean;
-  hideEnglish: boolean;
   fontSize: number;
-  displayMode: 'verse' | 'book';
+  displayMode: "verse" | "book";
   selectedTranslation: Translation;
   onToggleStrongsNumbers: (value: boolean) => void;
   onToggleInterlinear: (value: boolean) => void;
+  onToggleStrongsEnglishOnly: (value: boolean) => void;
   onToggleNotes: (value: boolean) => void;
-  onToggleHideEnglish: (value: boolean) => void;
   onFontSizeChange: (value: number) => void;
-  onDisplayModeChange: (mode: 'verse' | 'book') => void;
+  onDisplayModeChange: (mode: "verse" | "book") => void;
   onTranslationChange: (translation: Translation) => void;
 }
 
 export function ToolsPanel({
   showStrongsNumbers,
   showInterlinear,
+  showStrongsEnglishOnly,
   showNotes,
-  hideEnglish,
   fontSize,
   displayMode,
   selectedTranslation,
   onToggleStrongsNumbers,
   onToggleInterlinear,
+  onToggleStrongsEnglishOnly,
   onToggleNotes,
-  onToggleHideEnglish,
   onFontSizeChange,
   onDisplayModeChange,
   onTranslationChange,
@@ -56,7 +70,9 @@ export function ToolsPanel({
         <CardContent>
           <Select
             value={selectedTranslation}
-            onValueChange={(value) => onTranslationChange(value as Translation)}
+            onValueChange={(value) =>
+              onTranslationChange(value as Translation)
+            }
           >
             <SelectTrigger data-testid="select-translation">
               <SelectValue />
@@ -90,17 +106,17 @@ export function ToolsPanel({
             </Label>
             <Switch
               id="verse-mode"
-              checked={displayMode === 'verse'}
+              checked={displayMode === "verse"}
               onCheckedChange={(checked) =>
-                onDisplayModeChange(checked ? 'verse' : 'book')
+                onDisplayModeChange(checked ? "verse" : "book")
               }
               data-testid="switch-display-mode"
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            {displayMode === 'verse'
-              ? 'Show verse numbers'
-              : 'Read like a book (no verse numbers)'}
+            {displayMode === "verse"
+              ? "Show verse numbers"
+              : "Read like a book (no verse numbers)"}
           </p>
         </CardContent>
       </Card>
@@ -134,7 +150,7 @@ export function ToolsPanel({
               className="text-sm flex items-center gap-2 cursor-pointer"
             >
               <Languages className="h-4 w-4" />
-              Interlinear
+              Interlinear (Greek above)
             </Label>
             <Switch
               id="interlinear-toggle"
@@ -146,22 +162,18 @@ export function ToolsPanel({
 
           <div className="flex items-center justify-between">
             <Label
-              htmlFor="hide-english-toggle"
+              htmlFor="strongs-english-toggle"
               className="text-sm flex items-center gap-2 cursor-pointer"
             >
-              <Languages className="h-4 w-4" />
-              Hide English (Greek only)
+              Strong&apos;s English only
             </Label>
             <Switch
-              id="hide-english-toggle"
-              checked={hideEnglish}
-              onCheckedChange={onToggleHideEnglish}
-              data-testid="switch-hide-english"
+              id="strongs-english-toggle"
+              checked={showStrongsEnglishOnly}
+              onCheckedChange={onToggleStrongsEnglishOnly}
+              data-testid="switch-strongs-english-only"
             />
           </div>
-          <p className="text-xs text-muted-foreground">
-            When enabled, word-by-word view shows only Greek + Strong&apos;s.
-          </p>
 
           <div className="flex items-center justify-between">
             <Label
