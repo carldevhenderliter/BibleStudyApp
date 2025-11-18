@@ -14,6 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { BibleVerseWithTokens } from "@/lib/bibleData";
+import { NoteSaveOptions } from "./NoteEditor";
 
 interface VerseDisplayProps {
   verse: BibleVerse;
@@ -21,28 +22,28 @@ interface VerseDisplayProps {
   wordHighlights: Highlight[];
   showStrongsNumbers: boolean;
   showInterlinear: boolean;
+  hideEnglishInterlinear: boolean;
   showNotes: boolean;
   displayMode: "verse" | "book";
   showWordByWord: boolean;
-
   onAddNote: () => void;
   onAddWordNote: (wordIndex: number, wordText: string) => void;
-  onSaveWordNote: (wordIndex: number, content: string) => void;
+  onSaveWordNote: (
+    wordIndex: number,
+    content: string,
+    options?: NoteSaveOptions
+  ) => void;
   onCancelWordNote: () => void;
   onHighlightWord: (wordIndex: number, wordText: string, color: string) => void;
   onTextSelect: (text: string) => void;
   onStrongClick: (strongNumber: string) => void;
-
   wordNotes: Note[];
   activeWordNote: {
     verseId: string;
     wordIndex: number;
     wordText?: string;
   } | null;
-  activeStrongNumber?: string; // highlight all matching Strong’s in this chapter
-
-  // NEW: can be wired from ToolsPanel/Home
-  hideEnglishInterlinear?: boolean;
+  activeStrongNumber?: string;
 }
 
 const highlightColorMap = {
@@ -63,20 +64,20 @@ export function VerseDisplay({
   wordHighlights,
   showStrongsNumbers,
   showInterlinear,
+  hideEnglishInterlinear,
   showNotes,
   displayMode,
   showWordByWord,
   onAddNote,
   onAddWordNote,
-  onSaveWordNote,
-  onCancelWordNote,
+  onSaveWordNote, // currently not used inside, but typed correctly
+  onCancelWordNote, // currently not used here
   onHighlightWord,
   onTextSelect,
   onStrongClick,
   wordNotes,
   activeWordNote,
   activeStrongNumber,
-  hideEnglishInterlinear = false, // default false
 }: VerseDisplayProps) {
   const [showAddButton, setShowAddButton] = useState(false);
 
@@ -88,20 +89,20 @@ export function VerseDisplay({
     }
   };
 
-  const verseHighlightClass = highlight
-    ? highlightColorMap[highlight.color]
-    : "";
-
+  const highlightClass = highlight ? highlightColorMap[highlight.color] : "";
   const verseWithTokens = verse as BibleVerseWithTokens;
 
-  const hasWordNote = (wordIndex: number) =>
-    wordNotes.some((note) => note.wordIndex === wordIndex);
+  const hasWordNote = (wordIndex: number) => {
+    return wordNotes.some((note) => note.wordIndex === wordIndex);
+  };
 
-  const getWordNote = (wordIndex: number) =>
-    wordNotes.find((note) => Number(note.wordIndex) === wordIndex);
+  const getWordNote = (wordIndex: number) => {
+    return wordNotes.find((note) => Number(note.wordIndex) === wordIndex);
+  };
 
-  const getWordHighlight = (wordIndex: number) =>
-    wordHighlights.find((h) => h.wordIndex === wordIndex);
+  const getWordHighlight = (wordIndex: number) => {
+    return wordHighlights.find((h) => h.wordIndex === wordIndex);
+  };
 
   const isTokenStrongActive = (tokenStrong: string | string[] | undefined) => {
     if (!activeStrongNumber || !tokenStrong) return false;
@@ -111,165 +112,17 @@ export function VerseDisplay({
     return tokenStrong === activeStrongNumber;
   };
 
-  // Helper to render a single token in "interlinear stack" mode:
-  const renderInterlinearStack = (
-    token: any,
-    idx: number,
-    wordHighlightClass: string,
-    strongActive: boolean,
-    isBookMode: boolean
-  ) => {
-    const strongArray = token.strongs
-      ? Array.isArray(token.strongs)
-        ? token.strongs
-        : [token.strongs]
-      : [];
-
-    return (
-      <div
-        key={idx}
-        className="inline-flex flex-col items-center gap-1"
-      >
-        <Popover>
-          <PopoverTrigger asChild>
-            <div
-              className="inline-flex flex-col items-center gap-0.5 group/word cursor-pointer relative"
-              data-testid={`word-${verse.id}-${idx}`}
-            >
-              {/* GREEK ON TOP (from token.original) */}
-              <span
-                className={[
-                  "font-serif text-base rounded transition-colors",
-                  wordHighlightClass,
-                  strongActive
-                    ? "ring-2 ring-primary/60 bg-primary/10"
-                    : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                onClick={() => onAddWordNote(idx, token.english)}
-              >
-                {token.original || token.english}
-              </span>
-
-              {/* STRONG'S NUMBER(S) (if enabled) */}
-              {showStrongsNumbers && strongArray.length > 0 && (
-                <div className="flex gap-1 flex-wrap justify-center">
-                  {strongArray.map((strongNum: string, sIdx: number) => (
-                    <Tooltip key={sIdx}>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            onStrongClick(strongNum);
-                          }}
-                          className="text-xs text-primary cursor-pointer font-mono hover-elevate active-elevate-2 px-1 rounded"
-                          data-testid={`button-strong-${strongNum}`}
-                        >
-                          {strongNum}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="text-xs">
-                          Strong&apos;s {strongNum} - Click to view definition
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  ))}
-                </div>
-              )}
-
-              {/* ENGLISH UNDERNEATH (unless hidden) */}
-              {!hideEnglishInterlinear && (
-                <span className="text-xs leading-tight text-foreground/90">
-                  {token.english}
-                </span>
-              )}
-            </div>
-          </PopoverTrigger>
-
-          {/* POPOVER CONTENT: add word-note + color picker */}
-          <PopoverContent
-            className="w-56 p-2 space-y-2"
-            onOpenAutoFocus={(e) => e.preventDefault()}
-          >
-            {showNotes && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="w-full justify-start"
-                onClick={() => onAddWordNote(idx, token.english)}
-                data-testid={`button-add-word-note-${verse.id}-${idx}`}
-              >
-                <StickyNote className="h-3 w-3 mr-2" />
-                {getWordNote(idx) ? "View/Edit Note" : "Add Note"}
-              </Button>
-            )}
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground px-2">
-                Highlight Color:
-              </div>
-              <div className="flex gap-1 flex-wrap px-2">
-                {(
-                  [
-                    "yellow",
-                    "blue",
-                    "green",
-                    "pink",
-                    "purple",
-                    "orange",
-                    "red",
-                    "cyan",
-                    "gray",
-                  ] as const
-                ).map((color) => (
-                  <button
-                    key={color}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      onHighlightWord(idx, token.english, color);
-                    }}
-                    onMouseDown={(e) => e.preventDefault()}
-                    className={`w-6 h-6 rounded ${
-                      highlightColorMap[color]
-                    } border-2 ${
-                      getWordHighlight(idx)?.color === color
-                        ? "border-foreground"
-                        : "border-transparent"
-                    } hover:scale-110 transition-transform`}
-                    data-testid={`button-highlight-${color}-${verse.id}-${idx}`}
-                    aria-label={`Highlight ${color}`}
-                  />
-                ))}
-              </div>
-            </div>
-          </PopoverContent>
-        </Popover>
-
-        {/* Inline word-note preview under each word (same as before) */}
-        {showNotes && getWordNote(idx) && (
-          <div
-            className="text-xs text-muted-foreground bg-muted/50 border rounded px-2 py-1 max-w-[200px]"
-            data-testid={`word-note-${verse.id}-${idx}`}
-          >
-            <div className="flex items-start gap-1">
-              <StickyNote className="h-3 w-3 text-primary flex-shrink-0 mt-0.5" />
-              <span className="text-left break-words">
-                {getWordNote(idx)?.content}
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-    );
+  const shouldShowEnglishForInterlinear = (showInterlinear: boolean) => {
+    // If we are in interlinear AND user chose to hide English → hide it
+    if (showInterlinear && hideEnglishInterlinear) return false;
+    return true;
   };
 
-  // BOOK MODE, plain text (no word-by-word)
+  // BOOK MODE, plain text
   if (displayMode === "book" && !showWordByWord) {
     return (
       <span
-        className={`font-serif text-base leading-relaxed ${verseHighlightClass} inline`}
+        className={`font-serif text-base leading-relaxed ${highlightClass} inline`}
         onMouseUp={handleMouseUp}
         data-testid={`verse-${verse.id}`}
       >
@@ -287,27 +140,18 @@ export function VerseDisplay({
         onMouseUp={handleMouseUp}
       >
         {verseWithTokens.tokens!.map((token, idx) => {
+          const hasData =
+            (showStrongsNumbers && token.strongs) ||
+            (showInterlinear && token.original);
+          const wordNote = showNotes ? getWordNote(idx) : undefined;
           const wordHighlight = getWordHighlight(idx);
           const wordHighlightClass = wordHighlight
             ? highlightColorMap[wordHighlight.color]
             : "";
+
           const strongActive = isTokenStrongActive(token.strongs);
 
-          // If interlinear is ON → use stacked Greek/Strong/English
-          if (showInterlinear) {
-            return renderInterlinearStack(
-              token,
-              idx,
-              wordHighlightClass,
-              strongActive,
-              true
-            );
-          }
-
-          // Otherwise: normal English + optional Strong’s under it
-          const hasData =
-            (showStrongsNumbers && token.strongs) ||
-            (showInterlinear && token.original);
+          const showEnglish = shouldShowEnglishForInterlinear(showInterlinear);
 
           return (
             <div
@@ -317,24 +161,19 @@ export function VerseDisplay({
               <Popover>
                 <PopoverTrigger asChild>
                   <div
-                    className={`inline-flex flex-col items-center gap-0.5 group cursor-pointer relative`}
+                    className={`inline-flex flex-col items-center gap-0.5 group cursor-pointer relative ${
+                      strongActive ? "ring-2 ring-primary/60 rounded-md" : ""
+                    }`}
                     data-testid={`word-${verse.id}-${idx}`}
                   >
-                    <span
-                      className={[
-                        "font-serif text-base rounded transition-colors",
-                        hasData ? "px-1" : "",
-                        wordHighlightClass,
-                        strongActive
-                          ? "ring-2 ring-primary/60 bg-primary/10"
-                          : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                    >
-                      {token.english}
-                    </span>
+                    {/* Greek (original) on top when interlinear */}
+                    {showInterlinear && token.original && (
+                      <span className="text-sm italic text-primary font-serif">
+                        {token.original}
+                      </span>
+                    )}
 
+                    {/* Strong's numbers (only when showStrongsNumbers is on) */}
                     {showStrongsNumbers && token.strongs && (
                       <div className="flex gap-1 flex-wrap justify-center">
                         {(Array.isArray(token.strongs)
@@ -365,6 +204,21 @@ export function VerseDisplay({
                         ))}
                       </div>
                     )}
+
+                    {/* English line (hidden if interlinear + hideEnglishInterlinear) */}
+                    {showEnglish && (
+                      <span
+                        className={[
+                          "font-serif text-base rounded transition-colors",
+                          hasData ? "px-1" : "",
+                          wordHighlightClass,
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
+                        {token.english}
+                      </span>
+                    )}
                   </div>
                 </PopoverTrigger>
                 <PopoverContent
@@ -380,7 +234,7 @@ export function VerseDisplay({
                       data-testid={`button-add-word-note-${verse.id}-${idx}`}
                     >
                       <StickyNote className="h-3 w-3 mr-2" />
-                      {getWordNote(idx) ? "View/Edit Note" : "Add Note"}
+                      {wordNote ? "View/Edit Note" : "Add Note"}
                     </Button>
                   )}
                   <div className="space-y-1">
@@ -411,7 +265,7 @@ export function VerseDisplay({
                           className={`w-6 h-6 rounded ${
                             highlightColorMap[color]
                           } border-2 ${
-                            getWordHighlight(idx)?.color === color
+                            wordHighlight?.color === color
                               ? "border-foreground"
                               : "border-transparent"
                           } hover:scale-110 transition-transform`}
@@ -424,7 +278,7 @@ export function VerseDisplay({
                 </PopoverContent>
               </Popover>
 
-              {showNotes && getWordNote(idx) && (
+              {showNotes && wordNote && (
                 <div
                   className="text-xs text-muted-foreground bg-muted/50 border rounded px-2 py-1 max-w-[200px]"
                   data-testid={`word-note-${verse.id}-${idx}`}
@@ -432,7 +286,7 @@ export function VerseDisplay({
                   <div className="flex items-start gap-1">
                     <StickyNote className="h-3 w-3 text-primary flex-shrink-0 mt-0.5" />
                     <span className="text-left break-words">
-                      {getWordNote(idx)?.content}
+                      {wordNote.content}
                     </span>
                   </div>
                 </div>
@@ -453,12 +307,10 @@ export function VerseDisplay({
       onMouseLeave={() => setShowAddButton(false)}
     >
       <div className="flex gap-4">
-        {/* Verse number */}
         <div className="text-sm text-muted-foreground font-mono w-8 flex-shrink-0 text-right pt-1">
           {verse.verse}
         </div>
 
-        {/* Verse content */}
         <div className="flex-1" onMouseUp={handleMouseUp}>
           {showWordByWord ? (
             <div
@@ -466,27 +318,19 @@ export function VerseDisplay({
               data-testid={`verse-${verse.id}`}
             >
               {verseWithTokens.tokens!.map((token, idx) => {
+                const hasData =
+                  (showStrongsNumbers && token.strongs) ||
+                  (showInterlinear && token.original);
+                const wordNote = showNotes ? getWordNote(idx) : undefined;
                 const wordHighlight = getWordHighlight(idx);
                 const wordHighlightClass = wordHighlight
                   ? highlightColorMap[wordHighlight.color]
                   : "";
+
                 const strongActive = isTokenStrongActive(token.strongs);
-
-                // Interlinear ON → stacked Greek/Strong/English
-                if (showInterlinear) {
-                  return renderInterlinearStack(
-                    token,
-                    idx,
-                    wordHighlightClass,
-                    strongActive,
-                    false
-                  );
-                }
-
-                // Normal English + optional Strong’s below
-                const hasData =
-                  (showStrongsNumbers && token.strongs) ||
-                  (showInterlinear && token.original);
+                const showEnglish = shouldShowEnglishForInterlinear(
+                  showInterlinear
+                );
 
                 return (
                   <div
@@ -496,24 +340,21 @@ export function VerseDisplay({
                     <Popover>
                       <PopoverTrigger asChild>
                         <div
-                          className="inline-flex flex-col items-center gap-0.5 group/word cursor-pointer relative"
+                          className={`inline-flex flex-col items-center gap-0.5 group/word cursor-pointer relative ${
+                            strongActive
+                              ? "ring-2 ring-primary/60 rounded-md"
+                              : ""
+                          }`}
                           data-testid={`word-${verse.id}-${idx}`}
                         >
-                          <span
-                            className={[
-                              "font-serif text-base rounded transition-colors",
-                              hasData ? "px-1" : "",
-                              wordHighlightClass,
-                              strongActive
-                                ? "ring-2 ring-primary/60 bg-primary/10"
-                                : "",
-                            ]
-                              .filter(Boolean)
-                              .join(" ")}
-                          >
-                            {token.english}
-                          </span>
+                          {/* Greek on top when interlinear */}
+                          {showInterlinear && token.original && (
+                            <span className="text-sm italic text-primary font-serif">
+                              {token.original}
+                            </span>
+                          )}
 
+                          {/* Strong numbers under Greek (if enabled) */}
                           {showStrongsNumbers && token.strongs && (
                             <div className="flex gap-1 flex-wrap justify-center">
                               {(Array.isArray(token.strongs)
@@ -545,9 +386,18 @@ export function VerseDisplay({
                             </div>
                           )}
 
-                          {showInterlinear && token.original && (
-                            <span className="text-sm italic text-muted-foreground font-serif">
-                              {token.original}
+                          {/* English (hidden if interlinear + hideEnglishInterlinear) */}
+                          {showEnglish && (
+                            <span
+                              className={[
+                                "font-serif text-base rounded transition-colors",
+                                hasData ? "px-1" : "",
+                                wordHighlightClass,
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
+                            >
+                              {token.english}
                             </span>
                           )}
                         </div>
@@ -565,7 +415,7 @@ export function VerseDisplay({
                             data-testid={`button-add-word-note-${verse.id}-${idx}`}
                           >
                             <StickyNote className="h-3 w-3 mr-2" />
-                            {getWordNote(idx) ? "View/Edit Note" : "Add Note"}
+                            {wordNote ? "View/Edit Note" : "Add Note"}
                           </Button>
                         )}
                         <div className="space-y-1">
@@ -596,7 +446,7 @@ export function VerseDisplay({
                                 className={`w-6 h-6 rounded ${
                                   highlightColorMap[color]
                                 } border-2 ${
-                                  getWordHighlight(idx)?.color === color
+                                  wordHighlight?.color === color
                                     ? "border-foreground"
                                     : "border-transparent"
                                 } hover:scale-110 transition-transform`}
@@ -609,7 +459,7 @@ export function VerseDisplay({
                       </PopoverContent>
                     </Popover>
 
-                    {showNotes && getWordNote(idx) && (
+                    {showNotes && wordNote && (
                       <div
                         className="text-xs text-muted-foreground bg-muted/50 border rounded px-2 py-1 max-w-[200px]"
                         data-testid={`word-note-${verse.id}-${idx}`}
@@ -617,7 +467,7 @@ export function VerseDisplay({
                         <div className="flex items-start gap-1">
                           <StickyNote className="h-3 w-3 text-primary flex-shrink-0 mt-0.5" />
                           <span className="text-left break-words">
-                            {getWordNote(idx)?.content}
+                            {wordNote.content}
                           </span>
                         </div>
                       </div>
@@ -628,7 +478,7 @@ export function VerseDisplay({
             </div>
           ) : (
             <span
-              className={`font-serif text-base leading-relaxed ${verseHighlightClass} rounded-sm px-1 -mx-1`}
+              className={`font-serif text-base leading-relaxed ${highlightClass} rounded-sm px-1 -mx-1`}
               data-testid={`verse-${verse.id}`}
             >
               {verse.text}
