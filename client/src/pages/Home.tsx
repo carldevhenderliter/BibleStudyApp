@@ -4,13 +4,7 @@ import { BibleReader } from "@/components/BibleReader";
 import { ToolsPanel } from "@/components/ToolsPanel";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import {
-  Moon,
-  Sun,
-  Settings,
-  ArrowLeft,
-  ArrowRight,
-} from "lucide-react";
+import { Moon, Sun, Settings, ArrowLeft, ArrowRight } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 import { Translation } from "@/lib/bibleData";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -30,14 +24,12 @@ export default function Home() {
   // Strong’s ON by default
   const [showStrongsNumbers, setShowStrongsNumbers] = useState(true);
   const [showInterlinear, setShowInterlinear] = useState(false);
+  const [hideEnglishInterlinear, setHideEnglishInterlinear] = useState(false);
   const [showNotes, setShowNotes] = useState(true);
   const [fontSize, setFontSize] = useState(17);
   const [displayMode, setDisplayMode] = useState<"verse" | "book">("verse");
   const [selectedTranslation, setSelectedTranslation] =
     useState<Translation>("KJV");
-
-  // NEW: hide English line in interlinear mode
-  const [hideEnglishInterlinear, setHideEnglishInterlinear] = useState(false);
 
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
 
@@ -156,14 +148,14 @@ export default function Home() {
                   <ToolsPanel
                     showStrongsNumbers={showStrongsNumbers}
                     showInterlinear={showInterlinear}
+                    hideEnglishInterlinear={hideEnglishInterlinear}
                     showNotes={showNotes}
                     fontSize={fontSize}
                     displayMode={displayMode}
                     selectedTranslation={selectedTranslation}
-                    hideEnglishInterlinear={hideEnglishInterlinear}
-                    onToggleHideEnglishInterlinear={setHideEnglishInterlinear}
                     onToggleStrongsNumbers={setShowStrongsNumbers}
                     onToggleInterlinear={setShowInterlinear}
+                    onToggleHideEnglishInterlinear={setHideEnglishInterlinear}
                     onToggleNotes={setShowNotes}
                     onFontSizeChange={setFontSize}
                     onDisplayModeChange={setDisplayMode}
@@ -207,12 +199,11 @@ export default function Home() {
                 chapter={selectedChapter}
                 showStrongsNumbers={showStrongsNumbers}
                 showInterlinear={showInterlinear}
+                hideEnglishInterlinear={hideEnglishInterlinear}
                 showNotes={showNotes}
                 fontSize={fontSize}
                 displayMode={displayMode}
                 selectedTranslation={selectedTranslation}
-                hideEnglishInterlinear={hideEnglishInterlinear}
-                // allow cross-references / history nav
                 onNavigate={(book, chapter, verse) =>
                   navigateTo(book, chapter, { targetVerse: verse })
                 }
@@ -225,14 +216,14 @@ export default function Home() {
                 <ToolsPanel
                   showStrongsNumbers={showStrongsNumbers}
                   showInterlinear={showInterlinear}
+                  hideEnglishInterlinear={hideEnglishInterlinear}
                   showNotes={showNotes}
                   fontSize={fontSize}
                   displayMode={displayMode}
                   selectedTranslation={selectedTranslation}
-                  hideEnglishInterlinear={hideEnglishInterlinear}
-                  onToggleHideEnglishInterlinear={setHideEnglishInterlinear}
                   onToggleStrongsNumbers={setShowStrongsNumbers}
                   onToggleInterlinear={setShowInterlinear}
+                  onToggleHideEnglishInterlinear={setHideEnglishInterlinear}
                   onToggleNotes={setShowNotes}
                   onFontSizeChange={setFontSize}
                   onDisplayModeChange={setDisplayMode}
