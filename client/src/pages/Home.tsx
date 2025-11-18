@@ -21,15 +21,16 @@ export default function Home() {
   const [selectedBook, setSelectedBook] = useState("John");
   const [selectedChapter, setSelectedChapter] = useState(1);
 
-  // Strong’s ON by default
   const [showStrongsNumbers, setShowStrongsNumbers] = useState(true);
   const [showInterlinear, setShowInterlinear] = useState(false);
-  const [hideEnglishInterlinear, setHideEnglishInterlinear] = useState(false);
   const [showNotes, setShowNotes] = useState(true);
   const [fontSize, setFontSize] = useState(17);
   const [displayMode, setDisplayMode] = useState<"verse" | "book">("verse");
   const [selectedTranslation, setSelectedTranslation] =
     useState<Translation>("KJV");
+
+  // NEW: hide English text when using interlinear
+  const [hideEnglish, setHideEnglish] = useState(false);
 
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
 
@@ -148,15 +149,15 @@ export default function Home() {
                   <ToolsPanel
                     showStrongsNumbers={showStrongsNumbers}
                     showInterlinear={showInterlinear}
-                    hideEnglishInterlinear={hideEnglishInterlinear}
                     showNotes={showNotes}
+                    hideEnglish={hideEnglish}
                     fontSize={fontSize}
                     displayMode={displayMode}
                     selectedTranslation={selectedTranslation}
                     onToggleStrongsNumbers={setShowStrongsNumbers}
                     onToggleInterlinear={setShowInterlinear}
-                    onToggleHideEnglishInterlinear={setHideEnglishInterlinear}
                     onToggleNotes={setShowNotes}
+                    onToggleHideEnglish={setHideEnglish}
                     onFontSizeChange={setFontSize}
                     onDisplayModeChange={setDisplayMode}
                     onTranslationChange={setSelectedTranslation}
@@ -199,7 +200,7 @@ export default function Home() {
                 chapter={selectedChapter}
                 showStrongsNumbers={showStrongsNumbers}
                 showInterlinear={showInterlinear}
-                hideEnglishInterlinear={hideEnglishInterlinear}
+                hideEnglish={hideEnglish}
                 showNotes={showNotes}
                 fontSize={fontSize}
                 displayMode={displayMode}
@@ -216,15 +217,15 @@ export default function Home() {
                 <ToolsPanel
                   showStrongsNumbers={showStrongsNumbers}
                   showInterlinear={showInterlinear}
-                  hideEnglishInterlinear={hideEnglishInterlinear}
                   showNotes={showNotes}
+                  hideEnglish={hideEnglish}
                   fontSize={fontSize}
                   displayMode={displayMode}
                   selectedTranslation={selectedTranslation}
                   onToggleStrongsNumbers={setShowStrongsNumbers}
                   onToggleInterlinear={setShowInterlinear}
-                  onToggleHideEnglishInterlinear={setHideEnglishInterlinear}
                   onToggleNotes={setShowNotes}
+                  onToggleHideEnglish={setHideEnglish}
                   onFontSizeChange={setFontSize}
                   onDisplayModeChange={setDisplayMode}
                   onTranslationChange={setSelectedTranslation}
