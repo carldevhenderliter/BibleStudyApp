@@ -14,38 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { BibleVerseWithTokens } from "@/lib/bibleData";
-
-// ⬇️ Use the SAME path you use in StrongDefinitionInline
-//    (if that file imports from "@/data/strongs.json", do the same here)
-import strongsLexicon from "@/data/strongs.json";
-
-type StrongLexEntry = {
-  lemma?: string;
-  transliteration?: string;
-  gloss?: string;
-};
-
-const STRONGS = strongsLexicon as Record<string, StrongLexEntry>;
-
-function getLemmaFromStrongs(
-  strongNumber: string | string[] | undefined
-): string | null {
-  if (!strongNumber) return null;
-
-  // If multiple Strong’s numbers, just use the first for the lemma
-  const raw =
-    typeof strongNumber === "string" ? strongNumber : strongNumber[0] ?? "";
-  if (!raw) return null;
-
-  const normalized = raw.toUpperCase().trim();
-
-  // Try exact match, then try stripping leading zeros (G0305 -> G305)
-  const entry =
-    STRONGS[normalized] ??
-    STRONGS[normalized.replace(/^([GH])0+/, "$1")];
-
-  return entry?.lemma ?? null;
-}
+import { getStrongsDefinition } from "@/lib/strongsData";
 
 interface VerseDisplayProps {
   verse: BibleVerse;
@@ -64,12 +33,8 @@ interface VerseDisplayProps {
   onTextSelect: (text: string) => void;
   onStrongClick: (strongNumber: string) => void;
   wordNotes: Note[];
-  activeWordNote: {
-    verseId: string;
-    wordIndex: number;
-    wordText?: string;
-  } | null;
-  activeStrongNumber?: string; // highlight all matching Strong’s in this chapter (optional)
+  activeWordNote: { verseId: string; wordIndex: number; wordText?: string } | null;
+  activeStrongNumber?: string; // highlight all matching Strong’s in this chapter
 }
 
 const highlightColorMap = {
@@ -115,7 +80,6 @@ export function VerseDisplay({
   };
 
   const highlightClass = highlight ? highlightColorMap[highlight.color] : "";
-
   const verseWithTokens = verse as BibleVerseWithTokens;
 
   const hasWordNote = (wordIndex: number) => {
@@ -138,7 +102,7 @@ export function VerseDisplay({
     return tokenStrong === activeStrongNumber;
   };
 
-  // BOOK MODE, plain text
+  // ===== BOOK MODE, plain text =====
   if (displayMode === "book" && !showWordByWord) {
     return (
       <span
@@ -151,7 +115,7 @@ export function VerseDisplay({
     );
   }
 
-  // BOOK MODE, word-by-word
+  // ===== BOOK MODE, word-by-word =====
   if (displayMode === "book" && showWordByWord) {
     return (
       <div
@@ -160,9 +124,26 @@ export function VerseDisplay({
         onMouseUp={handleMouseUp}
       >
         {verseWithTokens.tokens!.map((token, idx) => {
+          const strongKey = token.strongs
+            ? Array.isArray(token.strongs)
+              ? token.strongs[0]
+              : token.strongs
+            : undefined;
+
+          const strongData = strongKey
+            ? getStrongsDefinition(strongKey)
+            : null;
+
+          // Prefer lemma from Strong's, fall back to token.original if needed
+          const lemma =
+            (strongData && (strongData as any).lemma) ||
+            token.original ||
+            null;
+
           const hasData =
             (showStrongsNumbers && token.strongs) ||
-            (showInterlinear && (token.original || token.strongs));
+            (showInterlinear && lemma);
+
           const wordNote = showNotes ? getWordNote(idx) : undefined;
           const wordHighlight = getWordHighlight(idx);
           const wordHighlightClass = wordHighlight
@@ -171,18 +152,18 @@ export function VerseDisplay({
 
           const strongActive = isTokenStrongActive(token.strongs);
 
-          const lemma =
-            getLemmaFromStrongs(token.strongs) ?? token.original ?? "";
-
           return (
-            <div key={idx} className="inline-flex flex-col items-center gap-1">
+            <div
+              key={idx}
+              className="inline-flex flex-col items-center gap-1"
+            >
               <Popover>
                 <PopoverTrigger asChild>
                   <div
                     className={`inline-flex flex-col items-center gap-0.5 group cursor-pointer relative`}
                     data-testid={`word-${verse.id}-${idx}`}
                   >
-                    {/* English surface form */}
+                    {/* English word */}
                     <span
                       className={[
                         "font-serif text-base rounded transition-colors",
@@ -198,7 +179,7 @@ export function VerseDisplay({
                       {token.english}
                     </span>
 
-                    {/* Strong’s numbers (if toggled on) */}
+                    {/* Strong's numbers */}
                     {showStrongsNumbers && token.strongs && (
                       <div className="flex gap-1 flex-wrap justify-center">
                         {(Array.isArray(token.strongs)
@@ -230,7 +211,7 @@ export function VerseDisplay({
                       </div>
                     )}
 
-                    {/* Interlinear line: lemma from Strong’s (fallback to token.original) */}
+                    {/* Interlinear: Greek lemma from Strong's (fallback to token.original) */}
                     {showInterlinear && lemma && (
                       <span className="text-sm italic text-muted-foreground font-serif">
                         {lemma}
@@ -315,7 +296,7 @@ export function VerseDisplay({
     );
   }
 
-  // VERSE MODE
+  // ===== VERSE MODE =====
   return (
     <div
       className="group relative py-3 scroll-mt-24"
@@ -335,9 +316,25 @@ export function VerseDisplay({
               data-testid={`verse-${verse.id}`}
             >
               {verseWithTokens.tokens!.map((token, idx) => {
+                const strongKey = token.strongs
+                  ? Array.isArray(token.strongs)
+                    ? token.strongs[0]
+                    : token.strongs
+                  : undefined;
+
+                const strongData = strongKey
+                  ? getStrongsDefinition(strongKey)
+                  : null;
+
+                const lemma =
+                  (strongData && (strongData as any).lemma) ||
+                  token.original ||
+                  null;
+
                 const hasData =
                   (showStrongsNumbers && token.strongs) ||
-                  (showInterlinear && (token.original || token.strongs));
+                  (showInterlinear && lemma);
+
                 const wordNote = showNotes ? getWordNote(idx) : undefined;
                 const wordHighlight = getWordHighlight(idx);
                 const wordHighlightClass = wordHighlight
@@ -345,9 +342,6 @@ export function VerseDisplay({
                   : "";
 
                 const strongActive = isTokenStrongActive(token.strongs);
-
-                const lemma =
-                  getLemmaFromStrongs(token.strongs) ?? token.original ?? "";
 
                 return (
                   <div
@@ -360,7 +354,7 @@ export function VerseDisplay({
                           className="inline-flex flex-col items-center gap-0.5 group/word cursor-pointer relative"
                           data-testid={`word-${verse.id}-${idx}`}
                         >
-                          {/* English surface form */}
+                          {/* English word */}
                           <span
                             className={[
                               "font-serif text-base rounded transition-colors",
@@ -376,7 +370,7 @@ export function VerseDisplay({
                             {token.english}
                           </span>
 
-                          {/* Strong’s numbers (if toggled on) */}
+                          {/* Strong's numbers */}
                           {showStrongsNumbers && token.strongs && (
                             <div className="flex gap-1 flex-wrap justify-center">
                               {(Array.isArray(token.strongs)
@@ -408,7 +402,7 @@ export function VerseDisplay({
                             </div>
                           )}
 
-                          {/* Interlinear line: lemma from Strong’s */}
+                          {/* Interlinear: lemma from Strong's */}
                           {showInterlinear && lemma && (
                             <span className="text-sm italic text-muted-foreground font-serif">
                               {lemma}
