@@ -10,14 +10,14 @@ interface ToolsPanelProps {
   showStrongsNumbers: boolean;
   showInterlinear: boolean;
   showNotes: boolean;
+  hideEnglish: boolean;
   fontSize: number;
   displayMode: 'verse' | 'book';
   selectedTranslation: Translation;
-  hideEnglishInterlinear: boolean;
   onToggleStrongsNumbers: (value: boolean) => void;
   onToggleInterlinear: (value: boolean) => void;
   onToggleNotes: (value: boolean) => void;
-  onToggleHideEnglishInterlinear: (value: boolean) => void;
+  onToggleHideEnglish: (value: boolean) => void;
   onFontSizeChange: (value: number) => void;
   onDisplayModeChange: (mode: 'verse' | 'book') => void;
   onTranslationChange: (translation: Translation) => void;
@@ -27,14 +27,14 @@ export function ToolsPanel({
   showStrongsNumbers,
   showInterlinear,
   showNotes,
+  hideEnglish,
   fontSize,
   displayMode,
   selectedTranslation,
-  hideEnglishInterlinear,
   onToggleStrongsNumbers,
   onToggleInterlinear,
   onToggleNotes,
-  onToggleHideEnglishInterlinear,
+  onToggleHideEnglish,
   onFontSizeChange,
   onDisplayModeChange,
   onTranslationChange,
@@ -91,7 +91,9 @@ export function ToolsPanel({
             <Switch
               id="verse-mode"
               checked={displayMode === 'verse'}
-              onCheckedChange={(checked) => onDisplayModeChange(checked ? 'verse' : 'book')}
+              onCheckedChange={(checked) =>
+                onDisplayModeChange(checked ? 'verse' : 'book')
+              }
               data-testid="switch-display-mode"
             />
           </div>
@@ -116,7 +118,7 @@ export function ToolsPanel({
               htmlFor="strongs-toggle"
               className="text-sm flex items-center gap-2 cursor-pointer"
             >
-              Strong's Numbers
+              Strong&apos;s Numbers
             </Label>
             <Switch
               id="strongs-toggle"
@@ -142,22 +144,24 @@ export function ToolsPanel({
             />
           </div>
 
-          {/* NEW: Hide English line in interlinear */}
           <div className="flex items-center justify-between">
             <Label
-              htmlFor="hide-english-interlinear"
+              htmlFor="hide-english-toggle"
               className="text-sm flex items-center gap-2 cursor-pointer"
             >
-              Hide English (Interlinear)
+              <Languages className="h-4 w-4" />
+              Hide English (Greek only)
             </Label>
             <Switch
-              id="hide-english-interlinear"
-              checked={hideEnglishInterlinear}
-              onCheckedChange={onToggleHideEnglishInterlinear}
-              disabled={!showInterlinear}
-              data-testid="switch-hide-english-interlinear"
+              id="hide-english-toggle"
+              checked={hideEnglish}
+              onCheckedChange={onToggleHideEnglish}
+              data-testid="switch-hide-english"
             />
           </div>
+          <p className="text-xs text-muted-foreground">
+            When enabled, word-by-word view shows only Greek + Strong&apos;s.
+          </p>
 
           <div className="flex items-center justify-between">
             <Label
