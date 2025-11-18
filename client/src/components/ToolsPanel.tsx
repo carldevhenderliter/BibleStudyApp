@@ -13,9 +13,11 @@ interface ToolsPanelProps {
   fontSize: number;
   displayMode: 'verse' | 'book';
   selectedTranslation: Translation;
+  hideEnglishInterlinear: boolean;
   onToggleStrongsNumbers: (value: boolean) => void;
   onToggleInterlinear: (value: boolean) => void;
   onToggleNotes: (value: boolean) => void;
+  onToggleHideEnglishInterlinear: (value: boolean) => void;
   onFontSizeChange: (value: number) => void;
   onDisplayModeChange: (mode: 'verse' | 'book') => void;
   onTranslationChange: (translation: Translation) => void;
@@ -28,9 +30,11 @@ export function ToolsPanel({
   fontSize,
   displayMode,
   selectedTranslation,
+  hideEnglishInterlinear,
   onToggleStrongsNumbers,
   onToggleInterlinear,
   onToggleNotes,
+  onToggleHideEnglishInterlinear,
   onFontSizeChange,
   onDisplayModeChange,
   onTranslationChange,
@@ -50,13 +54,20 @@ export function ToolsPanel({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Select value={selectedTranslation} onValueChange={(value) => onTranslationChange(value as Translation)}>
+          <Select
+            value={selectedTranslation}
+            onValueChange={(value) => onTranslationChange(value as Translation)}
+          >
             <SelectTrigger data-testid="select-translation">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {translations.map((trans) => (
-                <SelectItem key={trans.id} value={trans.id} data-testid={`option-translation-${trans.id.toLowerCase()}`}>
+                <SelectItem
+                  key={trans.id}
+                  value={trans.id}
+                  data-testid={`option-translation-${trans.id.toLowerCase()}`}
+                >
                   {trans.name} - {trans.fullName}
                 </SelectItem>
               ))}
@@ -85,7 +96,9 @@ export function ToolsPanel({
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            {displayMode === 'verse' ? 'Show verse numbers' : 'Read like a book (no verse numbers)'}
+            {displayMode === 'verse'
+              ? 'Show verse numbers'
+              : 'Read like a book (no verse numbers)'}
           </p>
         </CardContent>
       </Card>
@@ -99,7 +112,10 @@ export function ToolsPanel({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
-            <Label htmlFor="strongs-toggle" className="text-sm flex items-center gap-2 cursor-pointer">
+            <Label
+              htmlFor="strongs-toggle"
+              className="text-sm flex items-center gap-2 cursor-pointer"
+            >
               Strong's Numbers
             </Label>
             <Switch
@@ -111,7 +127,10 @@ export function ToolsPanel({
           </div>
 
           <div className="flex items-center justify-between">
-            <Label htmlFor="interlinear-toggle" className="text-sm flex items-center gap-2 cursor-pointer">
+            <Label
+              htmlFor="interlinear-toggle"
+              className="text-sm flex items-center gap-2 cursor-pointer"
+            >
               <Languages className="h-4 w-4" />
               Interlinear
             </Label>
@@ -123,8 +142,28 @@ export function ToolsPanel({
             />
           </div>
 
+          {/* NEW: Hide English line in interlinear */}
           <div className="flex items-center justify-between">
-            <Label htmlFor="notes-toggle" className="text-sm flex items-center gap-2 cursor-pointer">
+            <Label
+              htmlFor="hide-english-interlinear"
+              className="text-sm flex items-center gap-2 cursor-pointer"
+            >
+              Hide English (Interlinear)
+            </Label>
+            <Switch
+              id="hide-english-interlinear"
+              checked={hideEnglishInterlinear}
+              onCheckedChange={onToggleHideEnglishInterlinear}
+              disabled={!showInterlinear}
+              data-testid="switch-hide-english-interlinear"
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <Label
+              htmlFor="notes-toggle"
+              className="text-sm flex items-center gap-2 cursor-pointer"
+            >
               <StickyNote className="h-4 w-4" />
               Show Notes
             </Label>
