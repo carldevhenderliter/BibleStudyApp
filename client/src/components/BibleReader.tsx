@@ -18,13 +18,11 @@ interface BibleReaderProps {
   chapter: number;
   showStrongsNumbers: boolean;
   showInterlinear: boolean;
+  hideEnglish: boolean;
   showNotes: boolean;
   fontSize: number;
   displayMode: "verse" | "book";
   selectedTranslation: Translation;
-  // NEW: hide English line when in interlinear mode
-  hideEnglishInterlinear: boolean;
-  // From Home, used for cross-reference navigation
   onNavigate?: (book: string, chapter: number, verse?: number) => void;
 }
 
@@ -70,7 +68,6 @@ type StrongOccurrence = {
   verse: number;
 };
 
-// New Testament book/chapter map for scanning
 const NT_BOOK_CHAPTERS = [
   { book: "Matthew", chapters: 28 },
   { book: "Mark", chapters: 16 },
@@ -101,7 +98,6 @@ const NT_BOOK_CHAPTERS = [
   { book: "Revelation", chapters: 22 },
 ];
 
-// Theme → border accent classes (works in dark & light)
 const noteThemeBorderClasses: Record<NoteTheme, string> = {
   yellow: "border-amber-500/70",
   blue: "border-sky-500/70",
@@ -116,11 +112,11 @@ export function BibleReader({
   chapter,
   showStrongsNumbers,
   showInterlinear,
+  hideEnglish,
   showNotes,
   fontSize,
   displayMode,
   selectedTranslation,
-  hideEnglishInterlinear,
   onNavigate,
 }: BibleReaderProps) {
   const [verses, setVerses] = useState<BibleVerseWithTokens[]>([]);
@@ -146,7 +142,6 @@ export function BibleReader({
   const hasSelectedStrong = !!selectedStrong;
   const { toast } = useToast();
 
-  // Load verses + saved highlights/notes
   useEffect(() => {
     let cancelled = false;
 
@@ -210,15 +205,14 @@ export function BibleReader({
 
   const handleTextSelect = (verseId: string, text: string) => {
     const selection = window.getSelection();
-    const trimmed = text.trim();
-    if (selection && trimmed) {
+    if (selection && text) {
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
       setHighlightToolbar({
         show: true,
         position: { x: rect.left, y: rect.top },
         verseId,
-        text: trimmed,
+        text,
       });
     }
   };
@@ -242,9 +236,6 @@ export function BibleReader({
     setHighlightToolbar(null);
   };
 
-  /**
-   * Scroll to a specific verse in the current chapter.
-   */
   const scrollToVerse = (verseNumber: number) => {
     if (!verseNumber) return;
     const el = document.querySelector<HTMLElement>(
@@ -259,11 +250,6 @@ export function BibleReader({
     }
   };
 
-  /**
-   * Save a *verse-level* note.
-   * If range is provided, attach that range to a single note object,
-   * anchored at the first verse in the range.
-   */
   const handleSaveNote = (content: string, options?: NoteSaveOptions) => {
     if (!addingNote) return;
 
@@ -280,7 +266,6 @@ export function BibleReader({
       endVerse = Math.max(options.range.startVerse, options.range.endVerse);
     }
 
-    // Anchor note to the first verse in the range
     const anchorVerse =
       verses.find(
         (v) =>
@@ -363,9 +348,6 @@ export function BibleReader({
     }
   };
 
-  /**
-   * Save a *word-level* note.
-   */
   const handleSaveWordNote = (
     wordIndex: number,
     content: string,
@@ -448,7 +430,6 @@ export function BibleReader({
     }
   };
 
-  // 🔍 Scroll to a verse when you click an occurrence
   const handleJumpToOccurrence = (occ: StrongOccurrence) => {
     if (occ.book === book && occ.chapter === chapter) {
       const el = document.querySelector<HTMLElement>(
@@ -470,7 +451,6 @@ export function BibleReader({
     }
   };
 
-  // Highlight a word inside text (for selected verse + occurrences)
   const renderHighlightedText = (verseText: string, matchText: string) => {
     if (!matchText) return verseText;
 
@@ -495,7 +475,6 @@ export function BibleReader({
     );
   };
 
-  // 🧠 Strong's click: toggle panel + scan NT for occurrences
   const handleStrongClick = async (verseId: string, strongNumber: string) => {
     const normalized = strongNumber.toUpperCase().trim();
 
@@ -589,11 +568,10 @@ export function BibleReader({
       }
     }
 
-    setStrongOccurrences(allOccurrences);
-    setIsScanningOccurrences(false);
+  setStrongOccurrences(allOccurrences);
+  setIsScanningOccurrences(false);
   };
 
-  // Parse "John 3:16" or "1 John 4:8"
   const parseCrossReference = (
     ref: string
   ): { book: string; chapter: number; verse?: number } | null => {
@@ -616,18 +594,15 @@ export function BibleReader({
     };
   };
 
-  // Handle a click on a cross-reference chip in a note
   const handleCrossReferenceClick = (ref: string) => {
     const target = parseCrossReference(ref);
     if (!target) return;
 
-    // Same book & chapter → just scroll
     if (target.book === book && target.chapter === chapter && target.verse) {
       scrollToVerse(target.verse);
       return;
     }
 
-    // Different chapter or book → ask parent to navigate there
     if (onNavigate) {
       onNavigate(target.book, target.chapter, target.verse);
 
@@ -639,7 +614,6 @@ export function BibleReader({
     }
   };
 
-  // Build range groups: one sticky note + one big verse block per range
   const rangeNoteMap = new Map<
     string,
     { note: RangeNote; verses: BibleVerseWithTokens[] }
@@ -694,7 +668,7 @@ export function BibleReader({
             </p>
           </div>
 
-          {/* Search bar (future: book/verse + word/Strong’s search) */}
+          {/* Search bar (placeholder) */}
           <div className="w-full max-w-xs md:max-w-sm">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 h-4 w-4 pointer-events-none" />
@@ -709,10 +683,9 @@ export function BibleReader({
           </div>
         </div>
 
-        {/* Strong’s inline definition + selected verse + NT occurrences */}
+        {/* Strong’s panel */}
         {hasSelectedStrong && selectedStrong && (
           <div className="pt-1 space-y-3">
-            {/* Header row */}
             <div className="flex items-center justify-between text-[11px] md:text-xs uppercase tracking-wide text-muted-foreground">
               <span>
                 Strong&apos;s {selectedStrong.strongNumber} ·{" "}
@@ -725,7 +698,6 @@ export function BibleReader({
               )}
             </div>
 
-            {/* Selected verse with highlighted word */}
             <div className="rounded-xl bg-card border px-4 py-3 md:px-5 md:py-4 shadow-sm">
               <div className="text-[11px] md:text-xs font-mono text-primary/80 mb-1">
                 {selectedStrong.verseReference}
@@ -738,14 +710,12 @@ export function BibleReader({
               </div>
             </div>
 
-            {/* Definition: only visible when occurrences are HIDDEN */}
             {!showOccurrences && (
               <StrongDefinitionInline
                 strongNumber={selectedStrong.strongNumber}
               />
             )}
 
-            {/* Occurrences toggle + panel */}
             <div className="pt-1 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] md:text-xs text-muted-foreground">
@@ -805,7 +775,6 @@ export function BibleReader({
               )}
             </div>
 
-            {/* Close Strong's */}
             <div className="flex justify-center pt-1">
               <button
                 type="button"
@@ -831,7 +800,6 @@ export function BibleReader({
           style={{ fontSize: `${fontSize}px` }}
         >
           {verses.map((verse) => {
-            // If this verse is only part of a range and NOT the anchor, skip it
             if (
               rangeCoveredVerseIds.has(verse.id) &&
               !rangeNoteMap.has(verse.id)
@@ -842,7 +810,6 @@ export function BibleReader({
             const rangeGroup = rangeNoteMap.get(verse.id);
 
             if (rangeGroup) {
-              // Multi-verse range group
               const groupedVerses = rangeGroup.verses;
               const rangeNote = rangeGroup.note;
               const start = rangeNote.startVerse ?? groupedVerses[0].verse;
@@ -869,7 +836,6 @@ export function BibleReader({
                   key={`range-${rangeNote.id}`}
                   className={`md:flex md:items-start md:gap-6 mb-6 rounded-lg border bg-card px-3 py-3 md:px-4 md:py-4 shadow-sm ${borderClass}`}
                 >
-                  {/* LEFT: all verses in the range */}
                   <div className="flex-1 space-y-2">
                     {groupedVerses.map((v) => {
                       const verseHighlight = highlights.find(
@@ -904,7 +870,7 @@ export function BibleReader({
                               wordHighlights={wordHighlights}
                               showStrongsNumbers={showStrongsNumbers}
                               showInterlinear={showInterlinear}
-                              hideEnglishInterlinear={hideEnglishInterlinear}
+                              hideEnglish={hideEnglish}
                               showNotes={showNotes}
                               displayMode={displayMode}
                               showWordByWord={showWordByWord}
@@ -914,11 +880,7 @@ export function BibleReader({
                               onAddWordNote={(wordIndex, wordText) =>
                                 handleAddWordNote(v.id, wordIndex, wordText)
                               }
-                              onSaveWordNote={(
-                                wordIndex,
-                                content,
-                                options
-                              ) =>
+                              onSaveWordNote={(wordIndex, content, options) =>
                                 handleSaveWordNote(
                                   wordIndex,
                                   content,
@@ -962,10 +924,8 @@ export function BibleReader({
                     })}
                   </div>
 
-                  {/* RIGHT: sticky notes column (range note + active editor if in this group) */}
                   {showNotes && (
                     <div className="mt-3 md:mt-0 md:w-72 lg:w-80 space-y-3 md:sticky md:top-20">
-                      {/* The single range note for this whole group */}
                       <NoteEditor
                         note={rangeNote}
                         verseId={rangeNote.verseId}
@@ -983,7 +943,6 @@ export function BibleReader({
                         onCrossReferenceClick={handleCrossReferenceClick}
                       />
 
-                      {/* Active Note Editor (if addingNote belongs to any verse in this group) */}
                       {addingNote &&
                         groupedVerses.some(
                           (v) => v.id === addingNote.verseId
@@ -1037,7 +996,6 @@ export function BibleReader({
               );
             }
 
-            // Normal single-verse case
             const verseNotes = notes.filter((n) => {
               if (n.wordIndex !== undefined) return false;
               const rn = n as RangeNote;
@@ -1091,7 +1049,6 @@ export function BibleReader({
                 data-verse-number={verse.verse}
                 className={rowContainerClass}
               >
-                {/* Left: verse text */}
                 <div className="flex-1">
                   <VerseDisplay
                     verse={verse}
@@ -1099,7 +1056,7 @@ export function BibleReader({
                     wordHighlights={wordHighlights}
                     showStrongsNumbers={showStrongsNumbers}
                     showInterlinear={showInterlinear}
-                    hideEnglishInterlinear={hideEnglishInterlinear}
+                    hideEnglish={hideEnglish}
                     showNotes={showNotes}
                     displayMode={displayMode}
                     showWordByWord={showWordByWord}
@@ -1137,10 +1094,8 @@ export function BibleReader({
                   />
                 </div>
 
-                {/* Right: notes column on desktop, below on mobile */}
                 {showNotes && (
                   <div className="mt-3 md:mt-0 md:w-72 lg:w-80 space-y-3 md:sticky md:top-20">
-                    {/* Verse-level notes */}
                     {verseNotes.map((note) => {
                       const rn = note as RangeNote;
                       const start =
@@ -1178,7 +1133,6 @@ export function BibleReader({
                       );
                     })}
 
-                    {/* Word-level notes */}
                     {wordNotes.map((note) => (
                       <NoteEditor
                         key={note.id}
@@ -1200,7 +1154,6 @@ export function BibleReader({
                       />
                     ))}
 
-                    {/* Active Note Editor (new note) */}
                     {addingNote?.verseId === verse.id && (
                       <NoteEditor
                         note={
