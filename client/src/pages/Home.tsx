@@ -25,6 +25,7 @@ export default function Home() {
   const [showStrongsNumbers, setShowStrongsNumbers] = useState(true);
   const [showInterlinear, setShowInterlinear] = useState(false);
   const [showStrongsEnglishOnly, setShowStrongsEnglishOnly] = useState(false);
+  const [hideAllEnglish, setHideAllEnglish] = useState(false);
   const [showNotes, setShowNotes] = useState(true);
   const [fontSize, setFontSize] = useState(17);
   const [displayMode, setDisplayMode] = useState<"verse" | "book">("verse");
@@ -149,6 +150,7 @@ export default function Home() {
                     showStrongsNumbers={showStrongsNumbers}
                     showInterlinear={showInterlinear}
                     showStrongsEnglishOnly={showStrongsEnglishOnly}
+                    hideAllEnglish={hideAllEnglish}
                     showNotes={showNotes}
                     fontSize={fontSize}
                     displayMode={displayMode}
@@ -156,6 +158,7 @@ export default function Home() {
                     onToggleStrongsNumbers={setShowStrongsNumbers}
                     onToggleInterlinear={setShowInterlinear}
                     onToggleStrongsEnglishOnly={setShowStrongsEnglishOnly}
+                    onToggleHideAllEnglish={setHideAllEnglish}
                     onToggleNotes={setShowNotes}
                     onFontSizeChange={setFontSize}
                     onDisplayModeChange={setDisplayMode}
@@ -200,6 +203,7 @@ export default function Home() {
                 showStrongsNumbers={showStrongsNumbers}
                 showInterlinear={showInterlinear}
                 showStrongsEnglishOnly={showStrongsEnglishOnly}
+                hideAllEnglish={hideAllEnglish}
                 showNotes={showNotes}
                 fontSize={fontSize}
                 displayMode={displayMode}
@@ -217,6 +221,7 @@ export default function Home() {
                   showStrongsNumbers={showStrongsNumbers}
                   showInterlinear={showInterlinear}
                   showStrongsEnglishOnly={showStrongsEnglishOnly}
+                  hideAllEnglish={hideAllEnglish}
                   showNotes={showNotes}
                   fontSize={fontSize}
                   displayMode={displayMode}
@@ -224,6 +229,7 @@ export default function Home() {
                   onToggleStrongsNumbers={setShowStrongsNumbers}
                   onToggleInterlinear={setShowInterlinear}
                   onToggleStrongsEnglishOnly={setShowStrongsEnglishOnly}
+                  onToggleHideAllEnglish={setHideAllEnglish}
                   onToggleNotes={setShowNotes}
                   onFontSizeChange={setFontSize}
                   onDisplayModeChange={setDisplayMode}
