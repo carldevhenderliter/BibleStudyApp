@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppSidebar } from "@/components/AppSidebar";
 import { BibleReader } from "@/components/BibleReader";
 import { ToolsPanel } from "@/components/ToolsPanel";
@@ -43,6 +43,58 @@ export default function Home() {
 
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < history.length - 1;
+
+  // Load saved reader settings once
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const saved = localStorage.getItem("reader-settings");
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+      if (typeof parsed.fontSize === "number") setFontSize(parsed.fontSize);
+      if (parsed.fontFamily) setFontFamily(parsed.fontFamily);
+      if (typeof parsed.showStrongsNumbers === "boolean") setShowStrongsNumbers(parsed.showStrongsNumbers);
+      if (typeof parsed.showInterlinear === "boolean") setShowInterlinear(parsed.showInterlinear);
+      if (typeof parsed.showStrongsEnglishOnly === "boolean") setShowStrongsEnglishOnly(parsed.showStrongsEnglishOnly);
+      if (typeof parsed.hideAllEnglish === "boolean") setHideAllEnglish(parsed.hideAllEnglish);
+      if (typeof parsed.showNotes === "boolean") setShowNotes(parsed.showNotes);
+      if (parsed.displayMode === "verse" || parsed.displayMode === "book") setDisplayMode(parsed.displayMode);
+      if (parsed.selectedTranslation) setSelectedTranslation(parsed.selectedTranslation);
+    } catch (e) {
+      console.warn("Failed to load saved reader settings", e);
+    }
+  }, []);
+
+  // Persist reader settings
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const payload = {
+      fontSize,
+      fontFamily,
+      showStrongsNumbers,
+      showInterlinear,
+      showStrongsEnglishOnly,
+      hideAllEnglish,
+      showNotes,
+      displayMode,
+      selectedTranslation,
+    };
+    try {
+      localStorage.setItem("reader-settings", JSON.stringify(payload));
+    } catch (e) {
+      console.warn("Failed to save reader settings", e);
+    }
+  }, [
+    fontSize,
+    fontFamily,
+    showStrongsNumbers,
+    showInterlinear,
+    showStrongsEnglishOnly,
+    hideAllEnglish,
+    showNotes,
+    displayMode,
+    selectedTranslation,
+  ]);
 
   const navigateTo = (
     book: string,

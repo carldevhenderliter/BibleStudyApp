@@ -158,11 +158,16 @@ export function BibleReader({
   const [selectedStrong, setSelectedStrong] = useState<SelectedStrong | null>(
     null
   );
+  const [activeStrongNumber, setActiveStrongNumber] = useState<string>();
   const [strongOccurrences, setStrongOccurrences] =
     useState<StrongOccurrence[]>([]);
   const [isScanningOccurrences, setIsScanningOccurrences] = useState(false);
   const [showOccurrences, setShowOccurrences] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchPreview, setSearchPreview] = useState<{
+    ref: string;
+    text: string;
+  } | null>(null);
   const [searchSuggestions, setSearchSuggestions] = useState<
     { label: string; value: string }[]
   >([]);
@@ -184,11 +189,54 @@ export function BibleReader({
     []
   );
 
+  const findFirstStrongOccurrence = useCallback(
+    async (strongCode: string) => {
+      const target = strongCode.toUpperCase();
+      for (const { name: bookName, chapters } of bibleBooks) {
+        for (let ch = 1; ch <= chapters; ch++) {
+          try {
+            const vs = (await getVersesByChapter(
+              bookName,
+              ch,
+              selectedTranslation
+            )) as BibleVerseWithTokens[];
+            for (const v of vs) {
+              const tokens = v.tokens || [];
+              for (const token of tokens) {
+                if (!token.strongs) continue;
+                const vals = Array.isArray(token.strongs)
+                  ? token.strongs
+                  : [token.strongs];
+                const hit = vals.some(
+                  (s) => (s || "").toString().toUpperCase() === target
+                );
+                if (hit) {
+                  return {
+                    book: v.book,
+                    chapter: v.chapter,
+                    verse: v.verse,
+                    text: v.text,
+                    match: token.english,
+                  };
+                }
+              }
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+      }
+      return null;
+    },
+    [selectedTranslation]
+  );
+
   // Build autocomplete suggestions for refs like "John", "John 3", "Matt 5:"
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) {
       setSearchSuggestions([]);
+      setSearchPreview(null);
       return;
     }
 
@@ -223,6 +271,95 @@ export function BibleReader({
 
     setSearchSuggestions(suggestions);
   }, [searchQuery]);
+
+  // Live verse preview below search
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const q = searchQuery.trim();
+      if (!q) {
+        setSearchPreview(null);
+        return;
+      }
+
+      // Strong's preview
+      const strongMatch = q.match(/^#\s*([gh])\s*0*([0-9]+)$/i);
+      if (strongMatch) {
+        const prefix = strongMatch[1].toUpperCase();
+        const num = strongMatch[2];
+        try {
+          const occ = await findFirstStrongOccurrence(`${prefix}${num}`);
+          if (occ) {
+            setSearchPreview({
+              ref: `Strong's ${prefix}${num} · ${occ.book} ${occ.chapter}:${occ.verse}`,
+              text: occ.text,
+            });
+          } else {
+            setSearchPreview({
+              ref: `Strong's ${prefix}${num}`,
+              text: "No occurrence found.",
+            });
+          }
+        } catch (e) {
+          setSearchPreview({
+            ref: `Strong's ${prefix}${num}`,
+            text: "No occurrence found.",
+          });
+        }
+        return;
+      }
+
+      const match = q.match(/^([1-3]?\s*[A-Za-z]+)\s+(\d+)(?::(\d+))?$/i);
+      if (!match) {
+        setSearchPreview(null);
+        return;
+      }
+
+      const [, bookRaw, chapterStr, verseStr] = match;
+      const bookName = findBookName(bookRaw);
+      if (!bookName) {
+        setSearchPreview(null);
+        return;
+      }
+
+      const chapterNum = parseInt(chapterStr, 10);
+      const verseNum = verseStr ? parseInt(verseStr, 10) : undefined;
+      try {
+        const vs = (await getVersesByChapter(
+          bookName,
+          chapterNum,
+          selectedTranslation
+        )) as BibleVerseWithTokens[];
+        const target = verseNum
+          ? vs.find((v) => v.verse === verseNum)
+          : vs[0];
+        if (!cancelled) {
+          setSearchPreview(
+            target
+              ? {
+                  ref: `${bookName} ${chapterNum}${
+                    verseNum ? `:${verseNum}` : ""
+                  }`,
+                  text: target.text,
+                }
+              : {
+                  ref: `${bookName} ${chapterNum}${
+                    verseNum ? `:${verseNum}` : ""
+                  }`,
+                  text: "No preview available for that verse.",
+                }
+          );
+        }
+      } catch (e) {
+        if (!cancelled) setSearchPreview(null);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchQuery, selectedTranslation, findFirstStrongOccurrence]);
 
   const loadNextChapter = useCallback(async () => {
     if (isLoadingNextChapter) return;
@@ -376,6 +513,45 @@ export function BibleReader({
     };
   }, [book, chapter, selectedTranslation, toast, displayMode]);
 
+  const scrollToVerse = useCallback((verseNumber: number) => {
+    if (!verseNumber) return;
+    const el = document.querySelector<HTMLElement>(
+      `[data-verse-number="${verseNumber}"]`
+    );
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-primary/60", "bg-accent/20");
+      setTimeout(() => {
+        el.classList.remove("ring-2", "ring-primary/60", "bg-accent/20");
+      }, 1500);
+    }
+  }, []);
+
+  // Apply any pending Strong's navigation after verses load
+  useEffect(() => {
+    if (!verses.length) return;
+    if (typeof window === "undefined") return;
+    const pending = localStorage.getItem("pending-strong-nav");
+    if (!pending) return;
+    try {
+      const parsed = JSON.parse(pending);
+      if (
+        parsed.book === book &&
+        parsed.chapter === chapter &&
+        parsed.strongCode
+      ) {
+        setActiveStrongNumber(parsed.strongCode.toUpperCase());
+        if (parsed.verse) {
+          scrollToVerse(parsed.verse);
+        }
+      }
+    } catch (e) {
+      // ignore
+    } finally {
+      localStorage.removeItem("pending-strong-nav");
+    }
+  }, [verses, book, chapter, scrollToVerse]);
+
   const handleTextSelect = (verseId: string, text: string) => {
     const selection = window.getSelection();
     if (selection && text) {
@@ -409,27 +585,57 @@ export function BibleReader({
     setHighlightToolbar(null);
   };
 
-  /**
-   * Scroll to a specific verse in the current chapter.
-   */
-  const scrollToVerse = (verseNumber: number) => {
-    if (!verseNumber) return;
-    const el = document.querySelector<HTMLElement>(
-      `[data-verse-number="${verseNumber}"]`
-    );
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      el.classList.add("ring-2", "ring-primary/60", "bg-accent/20");
-      setTimeout(() => {
-        el.classList.remove("ring-2", "ring-primary/60", "bg-accent/20");
-      }, 1500);
-    }
-  };
-
   const handleSearchSubmit = useCallback(
-    (query: string) => {
+    async (query: string) => {
       const cleaned = query.trim();
       if (!cleaned) return;
+
+      // Strong's search: "#g1234" or "#h052"
+      const strongMatch = cleaned.match(/^#\s*([gh])\s*0*([0-9]+)$/i);
+      if (strongMatch) {
+        const prefix = strongMatch[1].toUpperCase();
+        const num = strongMatch[2];
+        const strongCode = `${prefix}${num}`;
+        setSearchQuery("");
+
+        const occurrence = await findFirstStrongOccurrence(strongCode);
+        if (occurrence) {
+          if (
+            occurrence.book === book &&
+            occurrence.chapter === chapter
+          ) {
+            setActiveStrongNumber(strongCode);
+            if (occurrence.verse) {
+              scrollToVerse(occurrence.verse);
+            }
+          } else {
+            try {
+              localStorage.setItem(
+                "pending-strong-nav",
+                JSON.stringify({
+                  book: occurrence.book,
+                  chapter: occurrence.chapter,
+                  verse: occurrence.verse,
+                  strongCode,
+                })
+              );
+            } catch (_) {
+              // ignore
+            }
+            onNavigate?.(
+              occurrence.book,
+              occurrence.chapter,
+              occurrence.verse
+            );
+          }
+        } else {
+          toast({
+            title: `Strong's ${strongCode} not found`,
+            variant: "default",
+          });
+        }
+        return;
+      }
 
       const match = cleaned.match(/^([1-3]?\s*[A-Za-z]+)\s+(\d+)(?::(\d+))?$/i);
       if (!match) {
@@ -464,7 +670,7 @@ export function BibleReader({
         onNavigate?.(bookName, chapterNum, verseNum);
       }
     },
-    [book, chapter, onNavigate, scrollToVerse, toast]
+    [book, chapter, onNavigate, scrollToVerse, toast, findFirstStrongOccurrence]
   );
 
   /**
@@ -714,6 +920,7 @@ export function BibleReader({
       setSelectedStrong(null);
       setStrongOccurrences([]);
       setShowOccurrences(false);
+      setActiveStrongNumber(undefined);
       return;
     }
 
@@ -746,6 +953,7 @@ export function BibleReader({
       verseText: verse.text,
       matchText,
     });
+    setActiveStrongNumber(normalized);
 
     setIsScanningOccurrences(true);
     setStrongOccurrences([]);
@@ -918,11 +1126,11 @@ export function BibleReader({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
-                    handleSearchSubmit(searchQuery);
+                    void handleSearchSubmit(searchQuery);
                   }
                 }}
               />
-              {searchSuggestions.length > 0 && (
+              {(searchSuggestions.length > 0 || searchPreview) && (
                 <div className="absolute left-0 right-0 mt-1 rounded-xl border bg-popover shadow-sm z-10 overflow-hidden">
                   {searchSuggestions.slice(0, 8).map((s) => (
                     <button
@@ -930,11 +1138,21 @@ export function BibleReader({
                       type="button"
                       className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
                       onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => handleSearchSubmit(s.value)}
+                      onClick={() => void handleSearchSubmit(s.value)}
                     >
                       {s.label}
                     </button>
                   ))}
+                  {searchPreview && (
+                    <div className="border-t px-3 py-2 text-sm bg-card">
+                      <div className="text-[11px] font-mono text-muted-foreground">
+                        {searchPreview.ref}
+                      </div>
+                      <div className="text-sm text-foreground/90 leading-snug">
+                        {searchPreview.text}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1166,6 +1384,7 @@ export function BibleReader({
                               fontFamily={fontFamily}
                               displayMode={displayMode}
                               showWordByWord={showWordByWord}
+                              activeStrongNumber={activeStrongNumber}
                               onAddNote={() =>
                                 setAddingNote({ verseId: v.id })
                               }
@@ -1371,6 +1590,7 @@ export function BibleReader({
                     fontFamily={fontFamily}
                     displayMode={displayMode}
                     showWordByWord={showWordByWord}
+                    activeStrongNumber={activeStrongNumber}
                     onAddNote={() => setAddingNote({ verseId: verse.id })}
                     onAddWordNote={(wordIndex, wordText) =>
                       handleAddWordNote(verse.id, wordIndex, wordText)
