@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { BibleVerse, Highlight, Note } from "@shared/schema";
 import { VerseDisplay } from "./VerseDisplay";
 import { NoteEditor, NoteTheme, NoteSaveOptions } from "./NoteEditor";
@@ -9,6 +9,7 @@ import {
   getVersesByChapter,
   BibleVerseWithTokens,
   Translation,
+  bibleBooks,
 } from "@/lib/bibleData";
 import { useToast } from "@/hooks/use-toast";
 import { Search, ChevronDown } from "lucide-react";
@@ -19,8 +20,10 @@ interface BibleReaderProps {
   showStrongsNumbers: boolean;
   showInterlinear: boolean;
   showStrongsEnglishOnly: boolean; // 🔹 new
+  hideAllEnglish: boolean;
   showNotes: boolean;
   fontSize: number;
+  fontFamily: "serif" | "sans" | "mono" | "gentium";
   displayMode: "verse" | "book";
   selectedTranslation: Translation;
   // From Home, used for cross-reference navigation
@@ -100,6 +103,18 @@ const NT_BOOK_CHAPTERS = [
   { book: "Revelation", chapters: 22 },
 ];
 
+const normalizeBook = (name: string) =>
+  name.replace(/[^a-z0-9]/gi, "").toLowerCase();
+
+const findBookName = (raw: string) => {
+  const target = normalizeBook(raw);
+  return (
+    bibleBooks.find(({ name }) =>
+      normalizeBook(name).startsWith(target)
+    )?.name || null
+  );
+};
+
 // Theme → border accent classes (works in dark & light)
 const noteThemeBorderClasses: Record<NoteTheme, string> = {
   yellow: "border-amber-500/70",
@@ -116,13 +131,20 @@ export function BibleReader({
   showStrongsNumbers,
   showInterlinear,
   showStrongsEnglishOnly,
+  hideAllEnglish,
   showNotes,
   fontSize,
+  fontFamily,
   displayMode,
   selectedTranslation,
   onNavigate,
 }: BibleReaderProps) {
   const [verses, setVerses] = useState<BibleVerseWithTokens[]>([]);
+  const [chapterStack, setChapterStack] = useState<
+    { chapter: number; verses: BibleVerseWithTokens[] }[]
+  >([]);
+  const [isLoadingPrevChapter, setIsLoadingPrevChapter] = useState(false);
+  const [isLoadingNextChapter, setIsLoadingNextChapter] = useState(false);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [notes, setNotes] = useState<RangeNote[]>([]);
   const [addingNote, setAddingNote] = useState<AddingNote | null>(null);
@@ -141,9 +163,149 @@ export function BibleReader({
   const [isScanningOccurrences, setIsScanningOccurrences] = useState(false);
   const [showOccurrences, setShowOccurrences] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchSuggestions, setSearchSuggestions] = useState<
+    { label: string; value: string }[]
+  >([]);
+  const scrollViewportRef = useRef<HTMLDivElement | null>(null);
 
   const hasSelectedStrong = !!selectedStrong;
   const { toast } = useToast();
+  const chapterCountMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    bibleBooks.forEach(({ name, chapters }) => {
+      map[name] = chapters;
+    });
+    return map;
+  }, []);
+
+  const flattenChapters = useCallback(
+    (stack: { chapter: number; verses: BibleVerseWithTokens[] }[]) =>
+      stack.flatMap((c) => c.verses),
+    []
+  );
+
+  // Build autocomplete suggestions for refs like "John", "John 3", "Matt 5:"
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setSearchSuggestions([]);
+      return;
+    }
+
+    const refMatch = q.match(/^([1-3]?\s*[A-Za-z]+)?\s*(\d*)/i);
+    const bookPart = refMatch?.[1]?.trim() || "";
+    const chapPart = refMatch?.[2] ? parseInt(refMatch[2], 10) : NaN;
+
+    const candidates = bibleBooks.filter(({ name }) =>
+      normalizeBook(name).startsWith(normalizeBook(bookPart || q))
+    );
+
+    const suggestions: { label: string; value: string }[] = [];
+
+    candidates.slice(0, 5).forEach(({ name: book, chapters }) => {
+      // Base book suggestion
+      suggestions.push({ label: book, value: book });
+
+      if (!Number.isNaN(chapPart) && chapPart > 0) {
+        const start = Math.max(1, chapPart);
+        for (
+          let c = start;
+          c <= Math.min(chapters, start + 4) && c <= chapters;
+          c++
+        ) {
+          suggestions.push({
+            label: `${book} ${c}`,
+            value: `${book} ${c}`,
+          });
+        }
+      }
+    });
+
+    setSearchSuggestions(suggestions);
+  }, [searchQuery]);
+
+  const loadNextChapter = useCallback(async () => {
+    if (isLoadingNextChapter) return;
+    if (!chapterStack.length) return;
+
+    const lastChapter = chapterStack[chapterStack.length - 1].chapter;
+    const maxChapter = chapterCountMap[book];
+    if (maxChapter && lastChapter >= maxChapter) return;
+
+    const nextChapter = lastChapter + 1;
+    setIsLoadingNextChapter(true);
+    try {
+      const nextVerses = await getVersesByChapter(
+        book,
+        nextChapter,
+        selectedTranslation
+      );
+      setChapterStack((prev) => {
+        if (prev.some((c) => c.chapter === nextChapter)) return prev;
+        const updated = [...prev, { chapter: nextChapter, verses: nextVerses as BibleVerseWithTokens[] }];
+        setVerses(flattenChapters(updated));
+        return updated;
+      });
+    } finally {
+      setIsLoadingNextChapter(false);
+    }
+  }, [book, chapterStack, chapterCountMap, flattenChapters, isLoadingNextChapter, selectedTranslation]);
+
+  const loadPrevChapter = useCallback(async () => {
+    if (isLoadingPrevChapter) return;
+    if (!chapterStack.length) return;
+
+    const firstChapter = chapterStack[0].chapter;
+    if (firstChapter <= 1) return;
+
+    const viewport = scrollViewportRef.current;
+    const prevScrollTop = viewport?.scrollTop ?? 0;
+    const prevHeight = viewport?.scrollHeight ?? 0;
+
+    const prevChapter = firstChapter - 1;
+    setIsLoadingPrevChapter(true);
+    try {
+      const prevVerses = await getVersesByChapter(
+        book,
+        prevChapter,
+        selectedTranslation
+      );
+      setChapterStack((prev) => {
+        if (prev.some((c) => c.chapter === prevChapter)) return prev;
+        const updated = [
+          { chapter: prevChapter, verses: prevVerses as BibleVerseWithTokens[] },
+          ...prev,
+        ];
+        setVerses(flattenChapters(updated));
+
+        // Maintain scroll position so content doesn't jump when prepending.
+        requestAnimationFrame(() => {
+          const vp = scrollViewportRef.current;
+          if (!vp) return;
+          const newHeight = vp.scrollHeight;
+          const delta = newHeight - prevHeight;
+          vp.scrollTop = prevScrollTop + delta;
+        });
+
+        return updated;
+      });
+    } finally {
+      setIsLoadingPrevChapter(false);
+    }
+  }, [book, chapterStack, flattenChapters, isLoadingPrevChapter, selectedTranslation]);
+
+  const handleScroll = useCallback(() => {
+    const vp = scrollViewportRef.current;
+    if (!vp) return;
+
+    const threshold = 200;
+    if (!isLoadingNextChapter && vp.scrollTop + vp.clientHeight > vp.scrollHeight - threshold) {
+      void loadNextChapter();
+    }
+    if (!isLoadingPrevChapter && vp.scrollTop < threshold) {
+      void loadPrevChapter();
+    }
+  }, [displayMode, isLoadingNextChapter, isLoadingPrevChapter, loadNextChapter, loadPrevChapter]);
 
   // Load verses + saved highlights/notes
   useEffect(() => {
@@ -158,7 +320,14 @@ export function BibleReader({
         );
 
         if (!cancelled) {
-          setVerses(loadedVerses as BibleVerseWithTokens[]);
+          const initialStack = [
+            {
+              chapter,
+              verses: loadedVerses as BibleVerseWithTokens[],
+            },
+          ];
+          setChapterStack(initialStack);
+          setVerses(initialStack.flatMap((c) => c.verses));
 
           const savedHighlights = localStorage.getItem("bible-highlights");
           const savedNotes = localStorage.getItem("bible-notes");
@@ -205,7 +374,7 @@ export function BibleReader({
     return () => {
       cancelled = true;
     };
-  }, [book, chapter, selectedTranslation, toast]);
+  }, [book, chapter, selectedTranslation, toast, displayMode]);
 
   const handleTextSelect = (verseId: string, text: string) => {
     const selection = window.getSelection();
@@ -256,6 +425,47 @@ export function BibleReader({
       }, 1500);
     }
   };
+
+  const handleSearchSubmit = useCallback(
+    (query: string) => {
+      const cleaned = query.trim();
+      if (!cleaned) return;
+
+      const match = cleaned.match(/^([1-3]?\s*[A-Za-z]+)\s+(\d+)(?::(\d+))?$/i);
+      if (!match) {
+        toast({
+          title: "Try a reference like 'John 3' or 'Matt 5:9'",
+          variant: "default",
+        });
+        return;
+      }
+
+      const [, bookRaw, chapterStr, verseStr] = match;
+      const bookName = findBookName(bookRaw);
+      if (!bookName) {
+        toast({
+          title: "Book not found",
+          description: "Use names like John, Matthew, Romans, etc.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const chapterNum = parseInt(chapterStr, 10);
+      const verseNum = verseStr ? parseInt(verseStr, 10) : undefined;
+
+      setSearchQuery("");
+
+      if (bookName === book && chapterNum === chapter) {
+        if (verseNum) {
+          scrollToVerse(verseNum);
+        }
+      } else {
+        onNavigate?.(bookName, chapterNum, verseNum);
+      }
+    },
+    [book, chapter, onNavigate, scrollToVerse, toast]
+  );
 
   /**
    * Save a *verse-level* note.
@@ -702,10 +912,31 @@ export function BibleReader({
               <input
                 type="text"
                 className="w-full rounded-full border border-border bg-background/80 px-9 py-1.5 text-sm shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                placeholder="Matt 5:4 or search (coming soon)…"
+                placeholder="E.g. John 3 or Matt 5:4"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleSearchSubmit(searchQuery);
+                  }
+                }}
               />
+              {searchSuggestions.length > 0 && (
+                <div className="absolute left-0 right-0 mt-1 rounded-xl border bg-popover shadow-sm z-10 overflow-hidden">
+                  {searchSuggestions.slice(0, 8).map((s) => (
+                    <button
+                      key={s.value}
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleSearchSubmit(s.value)}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -826,10 +1057,24 @@ export function BibleReader({
       </div>
 
       {/* MAIN SCROLL AREA */}
-      <ScrollArea className="flex-1">
+      <ScrollArea
+        className="flex-1"
+        viewportRef={scrollViewportRef}
+        onViewportScroll={handleScroll}
+      >
         <div
           className="max-w-5xl mx-auto px-6 py-8 pb-8"
-          style={{ fontSize: `${fontSize}px` }}
+          style={{
+            fontSize: `${fontSize}px`,
+            fontFamily:
+              fontFamily === "serif"
+                ? "var(--font-serif)"
+                : fontFamily === "gentium"
+                  ? "var(--font-gentium)"
+                  : fontFamily === "mono"
+                    ? "var(--font-mono)"
+                    : "var(--font-sans)",
+          }}
         >
           {verses.map((verse) => {
             // If this verse is only part of a range and NOT the anchor, skip it
@@ -868,10 +1113,14 @@ export function BibleReader({
               return (
                 <div
                   key={`range-${rangeNote.id}`}
-                  className={`md:flex md:items-start md:gap-6 mb-6 rounded-lg border bg-card px-3 py-3 md:px-4 md:py-4 shadow-sm ${borderClass}`}
+                  className={
+                    displayMode === "book"
+                      ? "inline"
+                      : `md:flex md:items-start md:gap-6 mb-6 rounded-lg border bg-card px-3 py-3 md:px-4 md:py-4 shadow-sm ${borderClass}`
+                  }
                 >
                   {/* LEFT: all verses in the range */}
-                  <div className="flex-1 space-y-2">
+                  <div className={displayMode === "book" ? "inline" : "flex-1 space-y-2"}>
                     {groupedVerses.map((v) => {
                       const verseHighlight = highlights.find(
                         (h) =>
@@ -881,13 +1130,16 @@ export function BibleReader({
                         (h) => h.verseId === v.id && h.wordIndex !== undefined
                       );
                       const verseWithTokens = v as BibleVerseWithTokens;
-                      const hasTokens =
+                      const hasTokens = Boolean(
                         verseWithTokens.tokens &&
-                        verseWithTokens.tokens.length > 0;
+                          verseWithTokens.tokens.length > 0
+                      );
                       const showWordByWord =
+                        hasTokens &&
                         (showStrongsNumbers ||
                           showInterlinear ||
-                          showStrongsEnglishOnly) && hasTokens;
+                          showStrongsEnglishOnly ||
+                          hideAllEnglish);
 
                       const thisWordNotes = groupWordNotes.filter(
                         (n) => n.verseId === v.id && n.wordIndex !== undefined
@@ -898,9 +1150,9 @@ export function BibleReader({
                           key={v.id}
                           data-verse-id={v.id}
                           data-verse-number={v.verse}
-                          className="md:flex md:items-start md:gap-4"
+                          className={displayMode === "book" ? "inline" : "md:flex md:items-start md:gap-4"}
                         >
-                          <div className="flex-1">
+                          <div className={displayMode === "book" ? "inline" : "flex-1"}>
                             <VerseDisplay
                               verse={v}
                               highlight={verseHighlight}
@@ -908,7 +1160,10 @@ export function BibleReader({
                               showStrongsNumbers={showStrongsNumbers}
                               showInterlinear={showInterlinear}
                               showStrongsEnglishOnly={showStrongsEnglishOnly}
+                              hideAllEnglish={hideAllEnglish}
                               showNotes={showNotes}
+                              fontSize={fontSize}
+                              fontFamily={fontFamily}
                               displayMode={displayMode}
                               showWordByWord={showWordByWord}
                               onAddNote={() =>
@@ -1069,12 +1324,15 @@ export function BibleReader({
               (h) => h.verseId === verse.id && h.wordIndex !== undefined
             );
             const verseWithTokens = verse as BibleVerseWithTokens;
-            const hasTokens =
-              verseWithTokens.tokens && verseWithTokens.tokens.length > 0;
+            const hasTokens = Boolean(
+              verseWithTokens.tokens && verseWithTokens.tokens.length > 0
+            );
             const showWordByWord =
+              hasTokens &&
               (showStrongsNumbers ||
                 showInterlinear ||
-                showStrongsEnglishOnly) && hasTokens;
+                showStrongsEnglishOnly ||
+                hideAllEnglish);
 
             const verseHasNote = showNotes && verseNotes.length > 0;
             const verseTheme: NoteTheme | null = verseHasNote
@@ -1084,9 +1342,12 @@ export function BibleReader({
               ? noteThemeBorderClasses[verseTheme]
               : "";
 
-            const rowContainerClass = verseHasNote
-              ? `md:flex md:items-start md:gap-6 mb-6 rounded-lg border bg-card px-3 py-3 md:px-4 md:py-4 shadow-sm ${verseBorderClass}`
-              : "md:flex md:items-start md:gap-6 mb-6";
+            const rowContainerClass =
+              displayMode === "book"
+                ? "inline"
+                : verseHasNote
+                  ? `md:flex md:items-start md:gap-6 mb-6 rounded-lg border bg-card px-3 py-3 md:px-4 md:py-4 shadow-sm ${verseBorderClass}`
+                  : "md:flex md:items-start md:gap-6 mb-6";
 
             return (
               <div
@@ -1096,7 +1357,7 @@ export function BibleReader({
                 className={rowContainerClass}
               >
                 {/* Left: verse text */}
-                <div className="flex-1">
+                <div className={displayMode === "book" ? "inline" : "flex-1"}>
                   <VerseDisplay
                     verse={verse}
                     highlight={verseHighlight}
@@ -1104,7 +1365,10 @@ export function BibleReader({
                     showStrongsNumbers={showStrongsNumbers}
                     showInterlinear={showInterlinear}
                     showStrongsEnglishOnly={showStrongsEnglishOnly}
+                    hideAllEnglish={hideAllEnglish}
                     showNotes={showNotes}
+                    fontSize={fontSize}
+                    fontFamily={fontFamily}
                     displayMode={displayMode}
                     showWordByWord={showWordByWord}
                     onAddNote={() => setAddingNote({ verseId: verse.id })}
@@ -1142,7 +1406,7 @@ export function BibleReader({
                 </div>
 
                 {/* Right: notes column on desktop, below on mobile */}
-                {showNotes && (
+                {displayMode !== "book" && showNotes && (
                   <div className="mt-3 md:mt-0 md:w-72 lg:w-80 space-y-3 md:sticky md:top-20">
                     {/* Verse-level notes */}
                     {verseNotes.map((note) => {

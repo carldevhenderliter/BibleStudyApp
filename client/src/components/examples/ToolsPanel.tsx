@@ -5,8 +5,11 @@ import { Translation } from '@/lib/bibleData';
 export default function ToolsPanelExample() {
   const [showStrongsNumbers, setShowStrongsNumbers] = useState(false);
   const [showInterlinear, setShowInterlinear] = useState(false);
+  const [showStrongsEnglishOnly, setShowStrongsEnglishOnly] = useState(false);
+  const [hideAllEnglish, setHideAllEnglish] = useState(false);
   const [showNotes, setShowNotes] = useState(true);
   const [fontSize, setFontSize] = useState(16);
+  const [fontFamily, setFontFamily] = useState<"serif" | "sans" | "mono" | "gentium">("serif");
   const [displayMode, setDisplayMode] = useState<'verse' | 'book'>('verse');
   const [selectedTranslation, setSelectedTranslation] = useState<Translation>('KJV');
 
@@ -16,14 +19,20 @@ export default function ToolsPanelExample() {
       <ToolsPanel
         showStrongsNumbers={showStrongsNumbers}
         showInterlinear={showInterlinear}
+        showStrongsEnglishOnly={showStrongsEnglishOnly}
+        hideAllEnglish={hideAllEnglish}
         showNotes={showNotes}
         fontSize={fontSize}
+        fontFamily={fontFamily}
         displayMode={displayMode}
         selectedTranslation={selectedTranslation}
         onToggleStrongsNumbers={setShowStrongsNumbers}
         onToggleInterlinear={setShowInterlinear}
+        onToggleStrongsEnglishOnly={setShowStrongsEnglishOnly}
+        onToggleHideAllEnglish={setHideAllEnglish}
         onToggleNotes={setShowNotes}
         onFontSizeChange={setFontSize}
+        onFontFamilyChange={setFontFamily}
         onDisplayModeChange={setDisplayMode}
         onTranslationChange={setSelectedTranslation}
       />
@@ -35,8 +44,11 @@ export default function ToolsPanelExample() {
           <li>Display Mode: {displayMode}</li>
           <li>Strong's Numbers: {showStrongsNumbers ? 'On' : 'Off'}</li>
           <li>Interlinear: {showInterlinear ? 'On' : 'Off'}</li>
+          <li>Strong's English Only: {showStrongsEnglishOnly ? 'On' : 'Off'}</li>
+          <li>Hide All English: {hideAllEnglish ? 'On' : 'Off'}</li>
           <li>Show Notes: {showNotes ? 'On' : 'Off'}</li>
           <li>Font Size: {fontSize}px</li>
+          <li>Font Family: {fontFamily}</li>
         </ul>
       </div>
     </div>

@@ -248,10 +248,27 @@ async function integrateStrongs() {
   
   console.log(`\nTotal verses with Strong's: ${allVerses.filter(v => v.strongsNumbers).length} / ${allVerses.length}`);
   
-  // Write to file
-  const outputPath = path.join(__dirname, '..', 'client', 'src', 'lib', 'bible-kjv-strongs.json');
+  // Write consolidated file plus per-book files
+  const outDir = process.env.OUT_DIR || path.join(__dirname, '..', 'downloads', 'strongs-generated');
+  fs.mkdirSync(outDir, { recursive: true });
+  const outputPath = path.join(outDir, 'bible-kjv-strongs.json');
   fs.writeFileSync(outputPath, JSON.stringify(allVerses, null, 2));
-  console.log(`\nSaved to: ${outputPath}`);
+  console.log(`Saved full JSON to: ${outputPath}`);
+
+  // Split per book using existing slugs
+  const byBook = allVerses.reduce((acc, verse) => {
+    acc[verse.book] = acc[verse.book] || [];
+    acc[verse.book].push(verse);
+    return acc;
+  }, {});
+
+  const slug = (name) => name.toLowerCase().replace(/\s+/g, '-');
+
+  Object.entries(byBook).forEach(([bookName, verses]) => {
+    const bookPath = path.join(outDir, `bible-kjv-strongs-${slug(bookName)}.json`);
+    fs.writeFileSync(bookPath, JSON.stringify(verses, null, 2));
+  });
+  console.log(`Saved per-book JSONs to: ${outDir}`);
 }
 
 integrateStrongs().catch(console.error);

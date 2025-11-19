@@ -28,6 +28,7 @@ export default function Home() {
   const [hideAllEnglish, setHideAllEnglish] = useState(false);
   const [showNotes, setShowNotes] = useState(true);
   const [fontSize, setFontSize] = useState(17);
+  const [fontFamily, setFontFamily] = useState<"serif" | "sans" | "mono" | "gentium">("serif");
   const [displayMode, setDisplayMode] = useState<"verse" | "book">("verse");
   const [selectedTranslation, setSelectedTranslation] =
     useState<Translation>("KJV");
@@ -153,6 +154,7 @@ export default function Home() {
                     hideAllEnglish={hideAllEnglish}
                     showNotes={showNotes}
                     fontSize={fontSize}
+                    fontFamily={fontFamily}
                     displayMode={displayMode}
                     selectedTranslation={selectedTranslation}
                     onToggleStrongsNumbers={setShowStrongsNumbers}
@@ -161,6 +163,7 @@ export default function Home() {
                     onToggleHideAllEnglish={setHideAllEnglish}
                     onToggleNotes={setShowNotes}
                     onFontSizeChange={setFontSize}
+                    onFontFamilyChange={setFontFamily}
                     onDisplayModeChange={setDisplayMode}
                     onTranslationChange={setSelectedTranslation}
                   />
@@ -206,6 +209,7 @@ export default function Home() {
                 hideAllEnglish={hideAllEnglish}
                 showNotes={showNotes}
                 fontSize={fontSize}
+                fontFamily={fontFamily}
                 displayMode={displayMode}
                 selectedTranslation={selectedTranslation}
                 onNavigate={(book, chapter, verse) =>
@@ -224,6 +228,7 @@ export default function Home() {
                   hideAllEnglish={hideAllEnglish}
                   showNotes={showNotes}
                   fontSize={fontSize}
+                  fontFamily={fontFamily}
                   displayMode={displayMode}
                   selectedTranslation={selectedTranslation}
                   onToggleStrongsNumbers={setShowStrongsNumbers}
@@ -232,6 +237,7 @@ export default function Home() {
                   onToggleHideAllEnglish={setHideAllEnglish}
                   onToggleNotes={setShowNotes}
                   onFontSizeChange={setFontSize}
+                  onFontFamilyChange={setFontFamily}
                   onDisplayModeChange={setDisplayMode}
                   onTranslationChange={setSelectedTranslation}
                 />
