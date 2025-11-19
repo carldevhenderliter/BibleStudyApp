@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600&family=Gentium+Book+Plus:wght@400;600&family=Inter:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -61,9 +63,10 @@
   --chart-4: 140 65% 35%;
   --chart-5: 45 80% 40%;
 
-  --font-sans: Inter, system-ui, sans-serif;
-  --font-serif: Georgia, Charter, serif;
-  --font-mono: SF Mono, Menlo, monospace;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-serif: "Crimson Pro", Georgia, "Times New Roman", serif;
+  --font-gentium: "Gentium Book Plus", "Crimson Pro", Georgia, serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
 
   --radius: .5rem;
 

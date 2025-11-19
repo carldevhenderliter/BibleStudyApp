@@ -71,8 +71,11 @@ async function downloadAndTransform() {
   
   console.log(`\nTotal verses: ${allVerses.length}`);
   
-  // Write to file
-  const outputPath = path.join(__dirname, '..', 'client', 'src', 'lib', 'bible-kjv-full.json');
+  // Write to file (allow override via env)
+  const outputPath =
+    process.env.OUT_PATH ||
+    path.join(__dirname, '..', 'client', 'src', 'lib', 'bible-kjv-full.json');
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, JSON.stringify(allVerses, null, 2));
   console.log(`\nSaved to: ${outputPath}`);
 }

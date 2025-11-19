@@ -25,8 +25,10 @@ interface VerseDisplayProps {
   showStrongsEnglishOnly?: boolean; // only show tokens with Strong's
   hideAllEnglish?: boolean; // hide all English words
   showNotes: boolean;
+  fontSize: number;
   displayMode: "verse" | "book";
   showWordByWord: boolean;
+  fontFamily: "serif" | "sans" | "mono" | "gentium";
   onAddNote: () => void;
   onAddWordNote: (wordIndex: number, wordText: string) => void;
   onSaveWordNote: (
@@ -55,18 +57,27 @@ const highlightColorMap = {
   gray: "bg-gray-200/60 dark:bg-gray-500/30",
 };
 
+const fontFamilyMap: Record<"serif" | "sans" | "mono" | "gentium", string> = {
+  serif: "var(--font-serif)",
+  gentium: "var(--font-gentium)",
+  sans: "var(--font-sans)",
+  mono: "var(--font-mono)",
+};
+
 export function VerseDisplay(props: VerseDisplayProps) {
   const {
     verse,
     highlight,
     wordHighlights,
     showStrongsNumbers,
-    showInterlinear,
-    showStrongsEnglishOnly = false,
-    hideAllEnglish = false,
-    showNotes,
-    displayMode,
-    showWordByWord,
+  showInterlinear,
+  showStrongsEnglishOnly = false,
+  hideAllEnglish = false,
+  showNotes,
+  fontSize,
+  displayMode,
+  showWordByWord,
+  fontFamily,
     onAddNote,
     onAddWordNote,
     onSaveWordNote, // not used directly, but kept for typing
@@ -91,6 +102,9 @@ export function VerseDisplay(props: VerseDisplayProps) {
 
   const highlightClass = highlight ? highlightColorMap[highlight.color] : "";
   const verseWithTokens = verse as BibleVerseWithTokens;
+  const baseFont = fontFamilyMap[fontFamily];
+  const englishFontSize = `${fontSize}px`;
+  const lemmaFontSize = `${Math.max(12, fontSize - 2)}px`;
 
   const getWordNote = (wordIndex: number) =>
     wordNotes.find((note) => Number(note.wordIndex) === wordIndex);
@@ -128,6 +142,7 @@ export function VerseDisplay(props: VerseDisplayProps) {
         className={`font-serif text-base leading-relaxed ${highlightClass} inline`}
         onMouseUp={handleMouseUp}
         data-testid={`verse-${verse.id}`}
+        style={{ fontFamily: baseFont, fontSize: englishFontSize }}
       >
         {verse.text}{" "}
       </span>
@@ -141,6 +156,7 @@ export function VerseDisplay(props: VerseDisplayProps) {
         className="inline-flex flex-wrap gap-x-3 gap-y-6 mr-2"
         data-testid={`verse-${verse.id}`}
         onMouseUp={handleMouseUp}
+        style={{ fontFamily: baseFont, fontSize: englishFontSize }}
       >
         {verseWithTokens.tokens!.map((token, idx) => {
           // Strong's English-only → skip tokens without Strong's
@@ -171,7 +187,10 @@ export function VerseDisplay(props: VerseDisplayProps) {
                   >
                     {/* Greek lemma on top */}
                     {lemma && (
-                      <span className="text-sm italic font-serif text-foreground">
+                      <span
+                        className="italic text-foreground"
+                        style={{ fontSize: lemmaFontSize, fontFamily: baseFont }}
+                      >
                         {lemma}
                       </span>
                     )}
@@ -216,7 +235,7 @@ export function VerseDisplay(props: VerseDisplayProps) {
                     {showEnglishWord && (
                       <span
                         className={[
-                          "font-serif text-base rounded transition-colors",
+                          "font-serif rounded transition-colors",
                           wordHighlightClass,
                           strongActive
                             ? "ring-2 ring-primary/60 bg-primary/10"
@@ -224,6 +243,7 @@ export function VerseDisplay(props: VerseDisplayProps) {
                         ]
                           .filter(Boolean)
                           .join(" ")}
+                        style={{ fontSize: englishFontSize, fontFamily: baseFont }}
                       >
                         {token.english}
                       </span>
@@ -320,11 +340,16 @@ export function VerseDisplay(props: VerseDisplayProps) {
           {verse.verse}
         </div>
 
-        <div className="flex-1" onMouseUp={handleMouseUp}>
+        <div
+          className="flex-1"
+          onMouseUp={handleMouseUp}
+          style={{ fontFamily: baseFont, fontSize: englishFontSize }}
+        >
           {showWordByWord ? (
             <div
               className="flex flex-wrap gap-x-3 gap-y-6"
               data-testid={`verse-${verse.id}`}
+              style={{ fontFamily: baseFont, fontSize: englishFontSize }}
             >
               {verseWithTokens.tokens!.map((token, idx) => {
                 // Strong's English-only → skip tokens without Strong's
@@ -355,7 +380,10 @@ export function VerseDisplay(props: VerseDisplayProps) {
                         >
                           {/* Greek lemma on top */}
                           {lemma && (
-                            <span className="text-sm italic font-serif text-foreground">
+                            <span
+                              className="italic text-foreground"
+                              style={{ fontSize: lemmaFontSize, fontFamily: baseFont }}
+                            >
                               {lemma}
                             </span>
                           )}
@@ -400,7 +428,7 @@ export function VerseDisplay(props: VerseDisplayProps) {
                           {showEnglishWord && (
                             <span
                               className={[
-                                "font-serif text-base rounded transition-colors",
+                                "font-serif rounded transition-colors",
                                 wordHighlightClass,
                                 strongActive
                                   ? "ring-2 ring-primary/60 bg-primary/10"
@@ -408,6 +436,10 @@ export function VerseDisplay(props: VerseDisplayProps) {
                               ]
                                 .filter(Boolean)
                                 .join(" ")}
+                              style={{
+                                fontSize: englishFontSize,
+                                fontFamily: baseFont,
+                              }}
                             >
                               {token.english}
                             </span>
@@ -492,6 +524,7 @@ export function VerseDisplay(props: VerseDisplayProps) {
             <span
               className={`font-serif text-base leading-relaxed ${highlightClass} rounded-sm px-1 -mx-1`}
               data-testid={`verse-${verse.id}`}
+              style={{ fontFamily: baseFont, fontSize: englishFontSize }}
             >
               {verse.text}
             </span>

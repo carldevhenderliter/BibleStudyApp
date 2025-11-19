@@ -28,6 +28,7 @@ interface ToolsPanelProps {
   hideAllEnglish: boolean;
   showNotes: boolean;
   fontSize: number;
+  fontFamily: "serif" | "sans" | "mono" | "gentium";
   displayMode: "verse" | "book";
   selectedTranslation: Translation;
   onToggleStrongsNumbers: (value: boolean) => void;
@@ -36,6 +37,7 @@ interface ToolsPanelProps {
   onToggleHideAllEnglish: (value: boolean) => void;
   onToggleNotes: (value: boolean) => void;
   onFontSizeChange: (value: number) => void;
+  onFontFamilyChange: (value: "serif" | "sans" | "mono" | "gentium") => void;
   onDisplayModeChange: (mode: "verse" | "book") => void;
   onTranslationChange: (translation: Translation) => void;
 }
@@ -47,6 +49,7 @@ export function ToolsPanel({
   hideAllEnglish,
   showNotes,
   fontSize,
+  fontFamily,
   displayMode,
   selectedTranslation,
   onToggleStrongsNumbers,
@@ -55,6 +58,7 @@ export function ToolsPanel({
   onToggleHideAllEnglish,
   onToggleNotes,
   onFontSizeChange,
+  onFontFamilyChange,
   onDisplayModeChange,
   onTranslationChange,
 }: ToolsPanelProps) {
@@ -223,11 +227,11 @@ export function ToolsPanel({
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center gap-2">
             <Type className="h-4 w-4" />
-            Font Size
+            Fonts
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-2">
+          <div className="space-y-4">
             <Slider
               value={[fontSize]}
               onValueChange={(values) => onFontSizeChange(values[0])}
@@ -240,6 +244,22 @@ export function ToolsPanel({
             <div className="text-xs text-muted-foreground text-center">
               {fontSize}px
             </div>
+            <Select
+              value={fontFamily}
+              onValueChange={(value) =>
+                onFontFamilyChange(value as "serif" | "sans" | "mono" | "gentium")
+              }
+            >
+              <SelectTrigger data-testid="select-font-family">
+                <SelectValue placeholder="Choose font" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="serif">Crimson Pro (Serif)</SelectItem>
+                <SelectItem value="gentium">Gentium Book (Serif)</SelectItem>
+                <SelectItem value="sans">Inter (Sans)</SelectItem>
+                <SelectItem value="mono">JetBrains Mono</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
