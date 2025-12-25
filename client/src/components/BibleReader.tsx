@@ -148,6 +148,9 @@ export function BibleReader({
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [notes, setNotes] = useState<RangeNote[]>([]);
   const [addingNote, setAddingNote] = useState<AddingNote | null>(null);
+  const [activeNotesVerseId, setActiveNotesVerseId] = useState<string | null>(
+    null
+  );
   const [highlightToolbar, setHighlightToolbar] = useState<{
     show: boolean;
     position: { x: number; y: number };
@@ -431,6 +434,35 @@ export function BibleReader({
     }
   }, [book, chapterStack, flattenChapters, isLoadingPrevChapter, selectedTranslation]);
 
+  const updateActiveVerseFromScroll = useCallback(() => {
+    const vp = scrollViewportRef.current;
+    if (!vp) return;
+
+    const viewportRect = vp.getBoundingClientRect();
+    const verseElements = Array.from(
+      vp.querySelectorAll<HTMLElement>("[data-verse-id]")
+    );
+
+    let bestId: string | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (const el of verseElements) {
+      const rect = el.getBoundingClientRect();
+      if (rect.bottom <= viewportRect.top || rect.top >= viewportRect.bottom) {
+        continue;
+      }
+      const distance = Math.abs(rect.top - viewportRect.top);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestId = el.getAttribute("data-verse-id");
+      }
+    }
+
+    if (bestId && bestId !== activeNotesVerseId) {
+      setActiveNotesVerseId(bestId);
+    }
+  }, [activeNotesVerseId]);
+
   const handleScroll = useCallback(() => {
     const vp = scrollViewportRef.current;
     if (!vp) return;
@@ -442,7 +474,24 @@ export function BibleReader({
     if (!isLoadingPrevChapter && vp.scrollTop < threshold) {
       void loadPrevChapter();
     }
-  }, [displayMode, isLoadingNextChapter, isLoadingPrevChapter, loadNextChapter, loadPrevChapter]);
+    updateActiveVerseFromScroll();
+  }, [
+    isLoadingNextChapter,
+    isLoadingPrevChapter,
+    loadNextChapter,
+    loadPrevChapter,
+    updateActiveVerseFromScroll,
+  ]);
+
+  useEffect(() => {
+    updateActiveVerseFromScroll();
+  }, [verses, updateActiveVerseFromScroll]);
+
+  useEffect(() => {
+    if (addingNote?.verseId) {
+      setActiveNotesVerseId(addingNote.verseId);
+    }
+  }, [addingNote?.verseId]);
 
   // Load verses + saved highlights/notes
   useEffect(() => {
@@ -1094,6 +1143,79 @@ export function BibleReader({
     }
   }
 
+  const panelVerseId = addingNote?.verseId ?? activeNotesVerseId;
+  const verseById = useMemo(() => {
+    const map = new Map<string, BibleVerseWithTokens>();
+    verses.forEach((v) => map.set(v.id, v));
+    return map;
+  }, [verses]);
+
+  const rangeGroups = useMemo(
+    () => Array.from(rangeNoteMap.values()),
+    [rangeNoteMap]
+  );
+
+  const rangeGroupForPanel = useMemo(() => {
+    if (!panelVerseId) return null;
+    return (
+      rangeGroups.find((group) =>
+        group.verses.some((v) => v.id === panelVerseId)
+      ) ?? null
+    );
+  }, [panelVerseId, rangeGroups]);
+
+  const rangeNoteForPanel = rangeGroupForPanel?.note ?? null;
+  const rangeRefForPanel = useMemo(() => {
+    if (!rangeGroupForPanel) return null;
+    const { verses: groupVerses, note } = rangeGroupForPanel;
+    const start = note.startVerse ?? groupVerses[0]?.verse ?? 1;
+    const end =
+      note.endVerse ?? groupVerses[groupVerses.length - 1]?.verse ?? start;
+    const bookName = groupVerses[0]?.book ?? "";
+    const chapterNum = groupVerses[0]?.chapter ?? 0;
+    return start === end
+      ? `${bookName} ${chapterNum}:${start}`
+      : `${bookName} ${chapterNum}:${start}-${end}`;
+  }, [rangeGroupForPanel]);
+
+  const verseNotesForPanel = useMemo(() => {
+    if (!panelVerseId) return [];
+    return notes.filter((n) => {
+      if (n.wordIndex !== undefined) return false;
+      if (rangeNoteForPanel && n.id === rangeNoteForPanel.id) return false;
+      return n.verseId === panelVerseId;
+    });
+  }, [notes, panelVerseId, rangeNoteForPanel]);
+
+  const wordNotesForPanel = useMemo(() => {
+    if (!panelVerseId) return [];
+    return notes.filter(
+      (n) => n.wordIndex !== undefined && n.verseId === panelVerseId
+    );
+  }, [notes, panelVerseId]);
+
+  const panelVerse = panelVerseId ? verseById.get(panelVerseId) ?? null : null;
+  const panelVerseRef = panelVerse
+    ? `${panelVerse.book} ${panelVerse.chapter}:${panelVerse.verse}`
+    : "";
+
+  const getVerseNoteRef = (note: RangeNote) => {
+    if (!panelVerse) return "";
+    const start =
+      typeof note.startVerse === "number" ? note.startVerse : panelVerse.verse;
+    const end =
+      typeof note.endVerse === "number" ? note.endVerse : start;
+    return start === end
+      ? `${panelVerse.book} ${panelVerse.chapter}:${start}`
+      : `${panelVerse.book} ${panelVerse.chapter}:${start}-${end}`;
+  };
+
+  const hasPanelNotes =
+    !!rangeNoteForPanel ||
+    verseNotesForPanel.length > 0 ||
+    wordNotesForPanel.length > 0 ||
+    (!!addingNote && addingNote.verseId === panelVerseId);
+
   return (
     <div className="h-full flex flex-col">
       {/* HEADER */}
@@ -1159,119 +1281,7 @@ export function BibleReader({
           </div>
         </div>
 
-        {/* Strong’s inline definition + selected verse + NT occurrences */}
-        {hasSelectedStrong && selectedStrong && (
-          <div className="pt-1 space-y-3">
-            {/* Header row */}
-            <div className="flex items-center justify-between text-[11px] md:text-xs uppercase tracking-wide text-muted-foreground">
-              <span>
-                Strong&apos;s {selectedStrong.strongNumber} ·{" "}
-                {selectedStrong.verseReference}
-              </span>
-              {isScanningOccurrences && (
-                <span className="text-[11px] md:text-xs text-muted-foreground/80">
-                  Scanning NT…
-                </span>
-              )}
-            </div>
-
-            {/* Selected verse with highlighted word */}
-            <div className="rounded-xl bg-card border px-4 py-3 md:px-5 md:py-4 shadow-sm">
-              <div className="text-[11px] md:text-xs font-mono text-primary/80 mb-1">
-                {selectedStrong.verseReference}
-              </div>
-              <div className="text-sm md:text-base leading-snug">
-                {renderHighlightedText(
-                  selectedStrong.verseText,
-                  selectedStrong.matchText
-                )}
-              </div>
-            </div>
-
-            {/* Definition: only visible when occurrences are HIDDEN */}
-            {!showOccurrences && (
-              <StrongDefinitionInline
-                strongNumber={selectedStrong.strongNumber}
-              />
-            )}
-
-            {/* Occurrences toggle + panel */}
-            <div className="pt-1 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] md:text-xs text-muted-foreground">
-                  New Testament occurrences:{" "}
-                  {isScanningOccurrences
-                    ? "scanning…"
-                    : strongOccurrences.length}
-                </span>
-
-                <button
-                  type="button"
-                  onClick={() => setShowOccurrences((prev) => !prev)}
-                  className="text-[11px] md:text-xs px-2 py-1 rounded-full border border-border hover:border-primary/60 hover:bg-accent/40 transition-colors"
-                >
-                  {showOccurrences ? "Close occurrences" : "Show occurrences"}
-                </button>
-              </div>
-
-              {showOccurrences && (
-                <div className="max-h-[58vh] overflow-y-auto space-y-2 pr-1 border-t border-border/70 pt-3 pb-2">
-                  {isScanningOccurrences && (
-                    <p className="text-[11px] md:text-xs text-muted-foreground">
-                      Scanning New Testament for Strong&apos;s{" "}
-                      {selectedStrong.strongNumber}…
-                    </p>
-                  )}
-
-                  {!isScanningOccurrences &&
-                    strongOccurrences.length > 0 &&
-                    strongOccurrences.map((occ) => (
-                      <button
-                        key={`${occ.verseId}-${occ.matchText}-${occ.reference}`}
-                        type="button"
-                        onClick={() => handleJumpToOccurrence(occ)}
-                        className="w-full text-left rounded-lg bg-card px-3 py-3 md:px-4 md:py-3 hover:bg-accent/70 hover:shadow-sm transition-colors"
-                      >
-                        <div className="text-[11px] md:text-xs font-mono text-primary mb-1">
-                          {occ.reference}
-                        </div>
-                        <div className="text-sm md:text-base text-foreground/90 leading-snug">
-                          {renderHighlightedText(
-                            occ.verseText,
-                            occ.matchText
-                          )}
-                        </div>
-                      </button>
-                    ))}
-
-                  {!isScanningOccurrences &&
-                    strongOccurrences.length === 0 && (
-                      <p className="text-[11px] md:text-xs text-muted-foreground">
-                        No New Testament occurrences found (or Strong&apos;s
-                        tagging is missing in this dataset).
-                      </p>
-                    )}
-                </div>
-              )}
-            </div>
-
-            {/* Close Strong's */}
-            <div className="flex justify-center pt-1">
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 text-[11px] md:text-xs text-muted-foreground hover:text-primary transition-colors"
-                onClick={() => {
-                  setSelectedStrong(null);
-                  setStrongOccurrences([]);
-                  setShowOccurrences(false);
-                }}
-              >
-                <ChevronDown className="h-3 w-3" />
-                <span>Close Strong&apos;s</span>
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Strong’s dictionary moved into the main column */}
       </div>
 
       {/* MAIN SCROLL AREA */}
@@ -1281,7 +1291,7 @@ export function BibleReader({
         onViewportScroll={handleScroll}
       >
         <div
-          className="max-w-5xl mx-auto px-6 py-8 pb-8"
+          className="max-w-none w-full px-3 py-4 pb-4"
           style={{
             fontSize: `${fontSize}px`,
             fontFamily:
@@ -1294,7 +1304,110 @@ export function BibleReader({
                     : "var(--font-sans)",
           }}
         >
-          {verses.map((verse) => {
+          <div className="md:flex md:items-start md:gap-6">
+            {/* Left: Strong's dictionary */}
+            {hasSelectedStrong && selectedStrong && (
+              <div className="md:w-80 lg:w-96 md:sticky md:top-6 mb-6 md:mb-0 space-y-3">
+                {/* Header row */}
+                <div className="flex items-center justify-between text-[11px] md:text-xs uppercase tracking-wide text-muted-foreground">
+                  <span>
+                    Strong&apos;s {selectedStrong.strongNumber} ·{" "}
+                    {selectedStrong.verseReference}
+                  </span>
+                  {isScanningOccurrences && (
+                    <span className="text-[11px] md:text-xs text-muted-foreground/80">
+                      Scanning NT…
+                    </span>
+                  )}
+                </div>
+
+                <StrongDefinitionInline
+                  strongNumber={selectedStrong.strongNumber}
+                />
+
+                {/* Occurrences toggle + panel */}
+                <div className="pt-1 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] md:text-xs text-muted-foreground">
+                      New Testament occurrences:{" "}
+                      {isScanningOccurrences
+                        ? "scanning…"
+                        : strongOccurrences.length}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowOccurrences((prev) => !prev)}
+                      className="text-[11px] md:text-xs px-2 py-1 rounded-full border border-border hover:border-primary/60 hover:bg-accent/40 transition-colors"
+                    >
+                      {showOccurrences
+                        ? "Close occurrences"
+                        : "Show occurrences"}
+                    </button>
+                  </div>
+
+                  {showOccurrences && (
+                    <div className="max-h-[58vh] overflow-y-auto space-y-2 pr-1 border-t border-border/70 pt-3 pb-2">
+                      {isScanningOccurrences && (
+                        <p className="text-[11px] md:text-xs text-muted-foreground">
+                          Scanning New Testament for Strong&apos;s{" "}
+                          {selectedStrong.strongNumber}…
+                        </p>
+                      )}
+
+                      {!isScanningOccurrences &&
+                        strongOccurrences.length > 0 &&
+                        strongOccurrences.map((occ) => (
+                          <button
+                            key={`${occ.verseId}-${occ.matchText}-${occ.reference}`}
+                            type="button"
+                            onClick={() => handleJumpToOccurrence(occ)}
+                            className="w-full text-left rounded-lg bg-card px-3 py-3 md:px-4 md:py-3 hover:bg-accent/70 hover:shadow-sm transition-colors"
+                          >
+                            <div className="text-[11px] md:text-xs font-mono text-primary mb-1">
+                              {occ.reference}
+                            </div>
+                            <div className="text-sm md:text-base text-foreground/90 leading-snug">
+                              {renderHighlightedText(
+                                occ.verseText,
+                                occ.matchText
+                              )}
+                            </div>
+                          </button>
+                        ))}
+
+                      {!isScanningOccurrences &&
+                        strongOccurrences.length === 0 && (
+                          <p className="text-[11px] md:text-xs text-muted-foreground">
+                            No New Testament occurrences found (or Strong&apos;s
+                            tagging is missing in this dataset).
+                          </p>
+                        )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Close Strong's */}
+                <div className="flex justify-center pt-1">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-[11px] md:text-xs text-muted-foreground hover:text-primary transition-colors"
+                    onClick={() => {
+                      setSelectedStrong(null);
+                      setStrongOccurrences([]);
+                      setShowOccurrences(false);
+                    }}
+                  >
+                    <ChevronDown className="h-3 w-3" />
+                    <span>Close Strong&apos;s</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Right: verses */}
+            <div className="flex-1 min-w-[50%]">
+              {verses.map((verse) => {
             // If this verse is only part of a range and NOT the anchor, skip it
             if (
               rangeCoveredVerseIds.has(verse.id) &&
@@ -1332,13 +1445,19 @@ export function BibleReader({
                 <div
                   key={`range-${rangeNote.id}`}
                   className={
-                    displayMode === "book"
+                    displayMode === "book" && !showNotes
                       ? "inline"
                       : `md:flex md:items-start md:gap-6 mb-6 rounded-lg border bg-card px-3 py-3 md:px-4 md:py-4 shadow-sm ${borderClass}`
                   }
                 >
                   {/* LEFT: all verses in the range */}
-                  <div className={displayMode === "book" ? "inline" : "flex-1 space-y-2"}>
+                  <div
+                    className={
+                      displayMode === "book" && !showNotes
+                        ? "inline"
+                        : "flex-1 space-y-2"
+                    }
+                  >
                     {groupedVerses.map((v) => {
                       const verseHighlight = highlights.find(
                         (h) =>
@@ -1368,9 +1487,19 @@ export function BibleReader({
                           key={v.id}
                           data-verse-id={v.id}
                           data-verse-number={v.verse}
-                          className={displayMode === "book" ? "inline" : "md:flex md:items-start md:gap-4"}
+                          className={
+                            displayMode === "book" && !showNotes
+                              ? "inline"
+                              : "md:flex md:items-start md:gap-4"
+                          }
                         >
-                          <div className={displayMode === "book" ? "inline" : "flex-1"}>
+                          <div
+                            className={
+                              displayMode === "book" && !showNotes
+                                ? "inline"
+                                : "flex-1"
+                            }
+                          >
                             <VerseDisplay
                               verse={v}
                               highlight={verseHighlight}
@@ -1435,81 +1564,6 @@ export function BibleReader({
                     })}
                   </div>
 
-                  {/* RIGHT: sticky notes column (range note + active editor if in this group) */}
-                  {showNotes && (
-                    <div className="mt-3 md:mt-0 md:w-80 lg:w-96 space-y-3 md:sticky md:top-20">
-                      {/* The single range note for this whole group */}
-                      <NoteEditor
-                        note={rangeNote}
-                        verseId={rangeNote.verseId}
-                        verseReference={rangeRef}
-                        fontSize={fontSize}
-                        enableRange={false} // range already set
-                        onSave={(content, opts) =>
-                          handleUpdateNote(rangeNote.id, content, {
-                            theme: opts?.theme,
-                            crossReferences: opts?.crossReferences,
-                            title: opts?.title,
-                          })
-                        }
-                        onDelete={() => handleDeleteNote(rangeNote.id)}
-                        onCancel={() => {}}
-                        onCrossReferenceClick={handleCrossReferenceClick}
-                      />
-
-                      {/* Active Note Editor (if addingNote belongs to any verse in this group) */}
-                      {addingNote &&
-                        groupedVerses.some(
-                          (v) => v.id === addingNote.verseId
-                        ) && (
-                          <NoteEditor
-                            note={
-                              addingNote.wordIndex !== undefined
-                                ? (notes.find(
-                                    (n) =>
-                                      n.verseId === addingNote.verseId &&
-                                      n.wordIndex === addingNote.wordIndex
-                                  ) as RangeNote | undefined)
-                                : undefined
-                            }
-                            verseId={addingNote.verseId}
-                            verseReference={rangeRef}
-                            fontSize={fontSize}
-                            wordText={addingNote.wordText}
-                            enableRange={addingNote.wordIndex === undefined}
-                            onSave={(content, opts) => {
-                              if (addingNote.wordIndex !== undefined) {
-                                // word note within this group
-                                handleSaveWordNote(
-                                  addingNote.wordIndex,
-                                  content,
-                                  opts
-                                );
-                              } else {
-                                // verse-level note: optionally range + theme + refs + title
-                                handleSaveNote(content, opts);
-                              }
-                              setAddingNote(null);
-                            }}
-                            onDelete={() => {
-                              if (addingNote.wordIndex !== undefined) {
-                                const existingNote = notes.find(
-                                  (n) =>
-                                    n.verseId === addingNote.verseId &&
-                                    n.wordIndex === addingNote.wordIndex
-                                );
-                                if (existingNote) {
-                                  handleDeleteNote(existingNote.id);
-                                }
-                              }
-                              setAddingNote(null);
-                            }}
-                            onCancel={() => setAddingNote(null)}
-                            onCrossReferenceClick={handleCrossReferenceClick}
-                          />
-                        )}
-                    </div>
-                  )}
                 </div>
               );
             }
@@ -1564,7 +1618,7 @@ export function BibleReader({
               : "";
 
             const rowContainerClass =
-              displayMode === "book"
+              displayMode === "book" && !showNotes
                 ? "inline"
                 : verseHasNote
                   ? `md:flex md:items-start md:gap-6 mb-6 rounded-lg border bg-card px-3 py-3 md:px-4 md:py-4 shadow-sm ${verseBorderClass}`
@@ -1578,7 +1632,11 @@ export function BibleReader({
                 className={rowContainerClass}
               >
                 {/* Left: verse text */}
-                <div className={displayMode === "book" ? "inline" : "flex-1"}>
+                <div
+                  className={
+                    displayMode === "book" && !showNotes ? "inline" : "flex-1"
+                  }
+                >
                   <VerseDisplay
                     verse={verse}
                     highlight={verseHighlight}
@@ -1627,55 +1685,71 @@ export function BibleReader({
                   />
                 </div>
 
-                {/* Right: notes column on desktop, below on mobile */}
-                {displayMode !== "book" && showNotes && (
-                  <div className="mt-3 md:mt-0 md:w-80 lg:w-96 space-y-3 md:sticky md:top-20">
-                    {/* Verse-level notes */}
-                    {verseNotes.map((note) => {
-                      const rn = note as RangeNote;
-                      const start =
-                        typeof rn.startVerse === "number"
-                          ? rn.startVerse
-                          : verse.verse;
-                      const end =
-                        typeof rn.endVerse === "number"
-                          ? rn.endVerse
-                          : start;
+              </div>
+            );
+              })}
 
-                      const rangeRef =
-                        start === end
-                          ? `${verse.book} ${verse.chapter}:${start}`
-                          : `${verse.book} ${verse.chapter}:${start}-${end}`;
+              {verses.length === 0 && (
+                <div className="text-center text-muted-foreground py-12">
+                  <p>No verses available for this chapter.</p>
+                  <p className="text-sm mt-2">
+                    Try selecting a different book or chapter.
+                  </p>
+                </div>
+              )}
+            </div>
 
-                      return (
-                        <NoteEditor
-                          key={note.id}
-                          note={note}
-                          verseId={verse.id}
-                          verseReference={rangeRef}
-                          fontSize={fontSize}
-                          enableRange={false}
-                          onSave={(content, opts) =>
-                            handleUpdateNote(note.id, content, {
-                              theme: opts?.theme,
-                              crossReferences: opts?.crossReferences,
-                              title: opts?.title,
-                            })
-                          }
-                          onDelete={() => handleDeleteNote(note.id)}
-                          onCancel={() => {}}
-                          onCrossReferenceClick={handleCrossReferenceClick}
-                        />
-                      );
-                    })}
+            {showNotes && (
+              <div className="mt-6 md:mt-0 md:w-80 lg:w-96 md:sticky md:top-6 space-y-3">
+                {panelVerseId && hasPanelNotes && (
+                  <>
+                    {rangeNoteForPanel && rangeRefForPanel && (
+                      <NoteEditor
+                        note={rangeNoteForPanel}
+                        verseId={rangeNoteForPanel.verseId}
+                        verseReference={rangeRefForPanel}
+                        fontSize={fontSize}
+                        enableRange={false}
+                        onSave={(content, opts) =>
+                          handleUpdateNote(rangeNoteForPanel.id, content, {
+                            theme: opts?.theme,
+                            crossReferences: opts?.crossReferences,
+                            title: opts?.title,
+                          })
+                        }
+                        onDelete={() => handleDeleteNote(rangeNoteForPanel.id)}
+                        onCancel={() => {}}
+                        onCrossReferenceClick={handleCrossReferenceClick}
+                      />
+                    )}
 
-                    {/* Word-level notes */}
-                    {wordNotes.map((note) => (
+                    {verseNotesForPanel.map((note) => (
+                      <NoteEditor
+                        key={note.id}
+                        note={note}
+                        verseId={note.verseId}
+                        verseReference={getVerseNoteRef(note)}
+                        fontSize={fontSize}
+                        enableRange={false}
+                        onSave={(content, opts) =>
+                          handleUpdateNote(note.id, content, {
+                            theme: opts?.theme,
+                            crossReferences: opts?.crossReferences,
+                            title: opts?.title,
+                          })
+                        }
+                        onDelete={() => handleDeleteNote(note.id)}
+                        onCancel={() => {}}
+                        onCrossReferenceClick={handleCrossReferenceClick}
+                      />
+                    ))}
+
+                    {wordNotesForPanel.map((note) => (
                       <NoteEditor
                         key={note.id}
                         note={note as RangeNote}
-                        verseId={verse.id}
-                        verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
+                        verseId={note.verseId}
+                        verseReference={panelVerseRef}
                         fontSize={fontSize}
                         wordText={note.wordText}
                         enableRange={false}
@@ -1692,18 +1766,17 @@ export function BibleReader({
                       />
                     ))}
 
-                    {/* Active Note Editor (new note) */}
-                    {addingNote?.verseId === verse.id && (
+                    {addingNote?.verseId === panelVerseId && (
                       <NoteEditor
                         note={
                           addingNote.wordIndex !== undefined
-                            ? (wordNotes.find(
+                            ? (wordNotesForPanel.find(
                                 (n) => n.wordIndex === addingNote.wordIndex
                               ) as RangeNote | undefined)
                             : undefined
                         }
-                        verseId={verse.id}
-                        verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
+                        verseId={panelVerseId}
+                        verseReference={panelVerseRef}
                         fontSize={fontSize}
                         wordText={addingNote.wordText}
                         enableRange={addingNote.wordIndex === undefined}
@@ -1721,7 +1794,7 @@ export function BibleReader({
                         }}
                         onDelete={() => {
                           if (addingNote.wordIndex !== undefined) {
-                            const existingNote = wordNotes.find(
+                            const existingNote = wordNotesForPanel.find(
                               (n) => n.wordIndex === addingNote.wordIndex
                             );
                             if (existingNote) {
@@ -1734,20 +1807,11 @@ export function BibleReader({
                         onCrossReferenceClick={handleCrossReferenceClick}
                       />
                     )}
-                  </div>
+                  </>
                 )}
               </div>
-            );
-          })}
-
-          {verses.length === 0 && (
-            <div className="text-center text-muted-foreground py-12">
-              <p>No verses available for this chapter.</p>
-              <p className="text-sm mt-2">
-                Try selecting a different book or chapter.
-              </p>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </ScrollArea>
 
