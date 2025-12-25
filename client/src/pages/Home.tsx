@@ -17,6 +17,7 @@ type Location = {
 
 export default function Home() {
   const { theme, toggleTheme } = useTheme();
+  const clampFontSize = (value: number) => Math.min(40, Math.max(10, Math.round(value)));
 
   const [selectedBook, setSelectedBook] = useState("John");
   const [selectedChapter, setSelectedChapter] = useState(1);
@@ -51,7 +52,7 @@ export default function Home() {
       const saved = localStorage.getItem("reader-settings");
       if (!saved) return;
       const parsed = JSON.parse(saved);
-      if (typeof parsed.fontSize === "number") setFontSize(parsed.fontSize);
+      if (typeof parsed.fontSize === "number") setFontSize(clampFontSize(parsed.fontSize));
       if (parsed.fontFamily) setFontFamily(parsed.fontFamily);
       if (typeof parsed.showStrongsNumbers === "boolean") setShowStrongsNumbers(parsed.showStrongsNumbers);
       if (typeof parsed.showInterlinear === "boolean") setShowInterlinear(parsed.showInterlinear);
@@ -214,7 +215,7 @@ export default function Home() {
                     onToggleStrongsEnglishOnly={setShowStrongsEnglishOnly}
                     onToggleHideAllEnglish={setHideAllEnglish}
                     onToggleNotes={setShowNotes}
-                    onFontSizeChange={setFontSize}
+                    onFontSizeChange={(value) => setFontSize(clampFontSize(value))}
                     onFontFamilyChange={setFontFamily}
                     onDisplayModeChange={setDisplayMode}
                     onTranslationChange={setSelectedTranslation}
@@ -288,7 +289,7 @@ export default function Home() {
                   onToggleStrongsEnglishOnly={setShowStrongsEnglishOnly}
                   onToggleHideAllEnglish={setHideAllEnglish}
                   onToggleNotes={setShowNotes}
-                  onFontSizeChange={setFontSize}
+                  onFontSizeChange={(value) => setFontSize(clampFontSize(value))}
                   onFontFamilyChange={setFontFamily}
                   onDisplayModeChange={setDisplayMode}
                   onTranslationChange={setSelectedTranslation}

@@ -1437,12 +1437,13 @@ export function BibleReader({
 
                   {/* RIGHT: sticky notes column (range note + active editor if in this group) */}
                   {showNotes && (
-                    <div className="mt-3 md:mt-0 md:w-72 lg:w-80 space-y-3 md:sticky md:top-20">
+                    <div className="mt-3 md:mt-0 md:w-80 lg:w-96 space-y-3 md:sticky md:top-20">
                       {/* The single range note for this whole group */}
                       <NoteEditor
                         note={rangeNote}
                         verseId={rangeNote.verseId}
                         verseReference={rangeRef}
+                        fontSize={fontSize}
                         enableRange={false} // range already set
                         onSave={(content, opts) =>
                           handleUpdateNote(rangeNote.id, content, {
@@ -1473,6 +1474,7 @@ export function BibleReader({
                             }
                             verseId={addingNote.verseId}
                             verseReference={rangeRef}
+                            fontSize={fontSize}
                             wordText={addingNote.wordText}
                             enableRange={addingNote.wordIndex === undefined}
                             onSave={(content, opts) => {
@@ -1627,7 +1629,7 @@ export function BibleReader({
 
                 {/* Right: notes column on desktop, below on mobile */}
                 {displayMode !== "book" && showNotes && (
-                  <div className="mt-3 md:mt-0 md:w-72 lg:w-80 space-y-3 md:sticky md:top-20">
+                  <div className="mt-3 md:mt-0 md:w-80 lg:w-96 space-y-3 md:sticky md:top-20">
                     {/* Verse-level notes */}
                     {verseNotes.map((note) => {
                       const rn = note as RangeNote;
@@ -1651,6 +1653,7 @@ export function BibleReader({
                           note={note}
                           verseId={verse.id}
                           verseReference={rangeRef}
+                          fontSize={fontSize}
                           enableRange={false}
                           onSave={(content, opts) =>
                             handleUpdateNote(note.id, content, {
@@ -1673,6 +1676,7 @@ export function BibleReader({
                         note={note as RangeNote}
                         verseId={verse.id}
                         verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
+                        fontSize={fontSize}
                         wordText={note.wordText}
                         enableRange={false}
                         onSave={(content, opts) =>
@@ -1700,6 +1704,7 @@ export function BibleReader({
                         }
                         verseId={verse.id}
                         verseReference={`${verse.book} ${verse.chapter}:${verse.verse}`}
+                        fontSize={fontSize}
                         wordText={addingNote.wordText}
                         enableRange={addingNote.wordIndex === undefined}
                         onSave={(content, opts) => {

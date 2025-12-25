@@ -235,8 +235,8 @@ export function ToolsPanel({
             <Slider
               value={[fontSize]}
               onValueChange={(values) => onFontSizeChange(values[0])}
-              min={14}
-              max={24}
+              min={10}
+              max={40}
               step={1}
               className="w-full"
               data-testid="slider-font-size"

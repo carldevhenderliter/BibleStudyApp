@@ -33,6 +33,7 @@ interface NoteEditorProps {
   verseReference: string;
   wordText?: string;
   enableRange?: boolean;
+  fontSize?: number;
   onSave: (content: string, options?: NoteSaveOptions) => void;
   onDelete?: () => void;
   onCancel: () => void;
@@ -56,12 +57,23 @@ export function NoteEditor({
   verseReference,
   wordText,
   enableRange = true,
+  fontSize = 16,
   onSave,
   onDelete,
   onCancel,
   onCrossReferenceClick,
   startInEditMode = false,
 }: NoteEditorProps) {
+  const resolvedFontSize = Math.min(40, Math.max(10, Math.round(fontSize)));
+  const metaFontSize = Math.max(10, Math.round(resolvedFontSize * 0.7));
+  const smallFontSize = Math.max(11, Math.round(resolvedFontSize * 0.8));
+  const titleStyle = { fontSize: `${resolvedFontSize}px`, lineHeight: 1.2 };
+  const contentStyle = {
+    fontSize: `${resolvedFontSize}px`,
+    lineHeight: 1.5,
+  };
+  const smallStyle = { fontSize: `${smallFontSize}px` };
+  const metaStyle = { fontSize: `${metaFontSize}px`, lineHeight: 1.2 };
   const [content, setContent] = useState(note?.content ?? "");
   const [title, setTitle] = useState(note?.title ?? "");
   const [theme, setTheme] = useState<NoteTheme>(note?.noteTheme ?? "yellow");
@@ -167,7 +179,7 @@ export function NoteEditor({
   // VIEW MODE (pretty card, no editing)
   if (!isEditing) {
     return (
-      <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
+      <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-base shadow-sm">
         {/* Header: title + mini theme dot + Edit button */}
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2 min-w-0">
@@ -177,10 +189,13 @@ export function NoteEditor({
               }`}
             />
             <div className="truncate">
-              <div className="text-sm font-semibold">
+              <div className="text-sm font-semibold" style={titleStyle}>
                 {title || "Untitled note"}
               </div>
-              <div className="text-[11px] text-muted-foreground">
+              <div
+                className="text-[11px] text-muted-foreground"
+                style={metaStyle}
+              >
                 Verses: {verseReference}
                 {wordText && (
                   <>
@@ -217,9 +232,11 @@ export function NoteEditor({
         </div>
 
         {/* Content */}
-        <div className="mt-1 text-sm whitespace-pre-wrap">
+        <div className="mt-1 whitespace-pre-wrap" style={contentStyle}>
           {content || (
-            <span className="text-muted-foreground">No content yet…</span>
+            <span className="text-muted-foreground" style={smallStyle}>
+              No content yet…
+            </span>
           )}
         </div>
 
@@ -231,6 +248,7 @@ export function NoteEditor({
                 key={ref}
                 type="button"
                 className="text-[11px] px-2 py-1 rounded-full border border-dashed border-primary/50 text-primary hover:bg-primary/10"
+                style={smallStyle}
                 onClick={() => onCrossReferenceClick?.(ref)}
               >
                 {ref}
@@ -244,7 +262,7 @@ export function NoteEditor({
 
   // EDIT MODE
   return (
-    <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-sm shadow-sm">
+    <div className="mt-3 rounded-lg border bg-card px-3 py-3 text-base shadow-sm">
       {/* Header row: title input + close */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex-1">
@@ -254,6 +272,7 @@ export function NoteEditor({
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Note title…"
             className="w-full text-sm font-semibold bg-transparent border-none outline-none placeholder:text-muted-foreground"
+            style={titleStyle}
           />
         </div>
         <button
@@ -266,7 +285,7 @@ export function NoteEditor({
       </div>
 
       {/* Selected verses text (top, non-clickable) */}
-      <div className="text-[11px] text-muted-foreground mb-2">
+      <div className="text-[11px] text-muted-foreground mb-2" style={metaStyle}>
         Verses: {verseReference}
         {wordText && (
           <>
@@ -278,7 +297,7 @@ export function NoteEditor({
 
       {/* Theme selector */}
       <div className="mb-2">
-        <div className="text-[11px] text-muted-foreground mb-1">
+        <div className="text-[11px] text-muted-foreground mb-1" style={metaStyle}>
           Note color
         </div>
         <div className="flex flex-wrap gap-2">
@@ -294,6 +313,7 @@ export function NoteEditor({
                   ? `${themeButtonStyles[t]} text-background`
                   : "border-border text-muted-foreground hover:bg-accent/60"
               }`}
+              style={smallStyle}
             >
               <span
                 className={`h-3 w-3 rounded-full ${
@@ -309,10 +329,13 @@ export function NoteEditor({
       {/* Scope controls – hidden for word notes or when enableRange=false */}
       {!disableScopeControls && !wordText && (
         <div className="mb-2">
-          <div className="text-[11px] text-muted-foreground mb-1">
+          <div className="text-[11px] text-muted-foreground mb-1" style={metaStyle}>
             This note applies to:
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          <div
+            className="flex flex-wrap items-center gap-2 text-[11px]"
+            style={smallStyle}
+          >
             <button
               type="button"
               onClick={() => setScopeMode("single")}
@@ -343,6 +366,7 @@ export function NoteEditor({
                 <input
                   type="number"
                   className="w-12 rounded border border-border bg-background px-1 py-0.5 text-[11px]"
+                  style={smallStyle}
                   value={startVerse}
                   min={1}
                   onChange={(e) =>
@@ -353,6 +377,7 @@ export function NoteEditor({
                 <input
                   type="number"
                   className="w-12 rounded border border-border bg-background px-1 py-0.5 text-[11px]"
+                  style={smallStyle}
                   value={endVerse}
                   min={1}
                   onChange={(e) =>
@@ -372,11 +397,12 @@ export function NoteEditor({
         rows={5}
         placeholder="Write your note…"
         className="mb-2 text-sm"
+        style={contentStyle}
       />
 
       {/* Cross references (input) */}
       <div className="mb-2">
-        <div className="text-[11px] text-muted-foreground mb-1">
+        <div className="text-[11px] text-muted-foreground mb-1" style={metaStyle}>
           Cross references (e.g. "John 3:16; Romans 5:1")
         </div>
         <input
@@ -384,22 +410,24 @@ export function NoteEditor({
           value={crossRefs}
           onChange={(e) => setCrossRefs(e.target.value)}
           className="w-full rounded border border-border bg-background px-2 py-1 text-[12px]"
+          style={smallStyle}
           placeholder="Type references separated by ; or ,"
         />
       </div>
 
       {/* Cross reference chips (clickable) */}
       {crossRefList.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-2">
-          {crossRefList.map((ref) => (
-            <button
-              key={ref}
-              type="button"
-              className="text-[11px] px-2 py-1 rounded-full border border-dashed border-primary/50 text-primary hover:bg-primary/10"
-              onClick={() => onCrossReferenceClick?.(ref)}
-            >
-              {ref}
-            </button>
+          <div className="flex flex-wrap gap-2 mb-2">
+            {crossRefList.map((ref) => (
+              <button
+                key={ref}
+                type="button"
+                className="text-[11px] px-2 py-1 rounded-full border border-dashed border-primary/50 text-primary hover:bg-primary/10"
+                style={smallStyle}
+                onClick={() => onCrossReferenceClick?.(ref)}
+              >
+                {ref}
+              </button>
           ))}
         </div>
       )}

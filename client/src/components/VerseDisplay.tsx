@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/popover";
 import { BibleVerseWithTokens } from "@/lib/bibleData";
 import { getStrongsDefinition } from "@/lib/strongsData";
+import greekSyllables from "@/Strongs_Definitions/strongs-greek-syllables.json";
 
 interface VerseDisplayProps {
   verse: BibleVerse;
@@ -105,6 +106,12 @@ export function VerseDisplay(props: VerseDisplayProps) {
   const baseFont = fontFamilyMap[fontFamily];
   const englishFontSize = `${fontSize}px`;
   const lemmaFontSize = `${Math.max(12, fontSize - 2)}px`;
+  const strongsFontSize = `${Math.max(10, Math.round(fontSize * 0.5))}px`;
+  const syllableFontSize = `${Math.max(11, Math.round(fontSize * 0.6))}px`;
+  const greekSyllableMap = greekSyllables as Record<
+    string,
+    { lemma: string; syllables: string[] }
+  >;
 
   const getWordNote = (wordIndex: number) =>
     wordNotes.find((note) => Number(note.wordIndex) === wordIndex);
@@ -133,6 +140,19 @@ export function VerseDisplay(props: VerseDisplayProps) {
     }
 
     return token.original || null;
+  };
+
+  const getSyllablesForToken = (token: any): string[] | null => {
+    if (!showInterlinear) return null;
+
+    const strongKey = Array.isArray(token.strongs)
+      ? token.strongs?.[0]
+      : token.strongs;
+
+    if (!strongKey) return null;
+    const entry = greekSyllableMap[strongKey];
+    if (!entry?.syllables?.length) return null;
+    return entry.syllables;
   };
 
   // BOOK MODE, plain text
@@ -172,14 +192,13 @@ export function VerseDisplay(props: VerseDisplayProps) {
 
           const strongActive = isTokenStrongActive(token.strongs);
           const lemma = getLemmaForToken(token);
+          const syllables = getSyllablesForToken(token);
           const showEnglishWord = !hideAllEnglish;
 
           return (
-            <div
-              key={idx}
-              className="inline-flex flex-col items-center gap-1"
-            >
-              <Popover>
+            <div key={idx} className="inline-flex items-start">
+              <div className="inline-flex flex-col items-center gap-1">
+                <Popover>
                 <PopoverTrigger asChild>
                   <div
                     className="inline-flex flex-col items-center gap-0.5 group cursor-pointer relative"
@@ -192,6 +211,21 @@ export function VerseDisplay(props: VerseDisplayProps) {
                         style={{ fontSize: lemmaFontSize, fontFamily: baseFont }}
                       >
                         {lemma}
+                      </span>
+                    )}
+                    {lemma && syllables && (
+                      <span
+                        className="text-red-600 font-semibold"
+                        style={{ fontSize: syllableFontSize, fontFamily: baseFont }}
+                      >
+                        {syllables.map((syllable, sIdx) => (
+                          <span key={sIdx}>
+                            {syllable}
+                            {sIdx < syllables.length - 1 && (
+                              <span className="text-yellow-500">|</span>
+                            )}
+                          </span>
+                        ))}
                       </span>
                     )}
 
@@ -215,6 +249,7 @@ export function VerseDisplay(props: VerseDisplayProps) {
                                     ? "ring-2 ring-primary/60 bg-primary/10"
                                     : ""
                                 }`}
+                                style={{ fontSize: strongsFontSize }}
                                 data-testid={`button-strong-${strongNum}`}
                               >
                                 {strongNum}
@@ -305,21 +340,22 @@ export function VerseDisplay(props: VerseDisplayProps) {
                     </div>
                   </div>
                 </PopoverContent>
-              </Popover>
+                </Popover>
 
-              {showNotes && wordNote && (
-                <div
-                  className="text-xs text-muted-foreground bg-muted/50 border rounded px-2 py-1 max-w-[200px]"
-                  data-testid={`word-note-${verse.id}-${idx}`}
-                >
-                  <div className="flex items-start gap-1">
-                    <StickyNote className="h-3 w-3 text-primary flex-shrink-0 mt-0.5" />
-                    <span className="text-left break-words">
-                      {wordNote.content}
-                    </span>
+                {showNotes && wordNote && (
+                  <div
+                    className="text-xs text-muted-foreground bg-muted/50 border rounded px-2 py-1 max-w-[200px]"
+                    data-testid={`word-note-${verse.id}-${idx}`}
+                  >
+                    <div className="flex items-start gap-1">
+                      <StickyNote className="h-3 w-3 text-primary flex-shrink-0 mt-0.5" />
+                      <span className="text-left break-words">
+                        {wordNote.content}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           );
         })}
@@ -365,14 +401,13 @@ export function VerseDisplay(props: VerseDisplayProps) {
 
                 const strongActive = isTokenStrongActive(token.strongs);
                 const lemma = getLemmaForToken(token);
+                const syllables = getSyllablesForToken(token);
                 const showEnglishWord = !hideAllEnglish;
 
                 return (
-                  <div
-                    key={idx}
-                    className="inline-flex flex-col items-center gap-1"
-                  >
-                    <Popover>
+                  <div key={idx} className="inline-flex items-start">
+                    <div className="inline-flex flex-col items-center gap-1">
+                      <Popover>
                       <PopoverTrigger asChild>
                         <div
                           className="inline-flex flex-col items-center gap-0.5 group/word cursor-pointer relative"
@@ -385,6 +420,24 @@ export function VerseDisplay(props: VerseDisplayProps) {
                               style={{ fontSize: lemmaFontSize, fontFamily: baseFont }}
                             >
                               {lemma}
+                            </span>
+                          )}
+                          {lemma && syllables && (
+                            <span
+                              className="text-red-600 font-semibold"
+                              style={{
+                                fontSize: syllableFontSize,
+                                fontFamily: baseFont,
+                              }}
+                            >
+                              {syllables.map((syllable, sIdx) => (
+                                <span key={sIdx}>
+                                  {syllable}
+                                  {sIdx < syllables.length - 1 && (
+                                    <span className="text-yellow-500">|</span>
+                                  )}
+                                </span>
+                              ))}
                             </span>
                           )}
 
@@ -408,6 +461,7 @@ export function VerseDisplay(props: VerseDisplayProps) {
                                           ? "ring-2 ring-primary/60 bg-primary/10"
                                           : ""
                                       }`}
+                                      style={{ fontSize: strongsFontSize }}
                                       data-testid={`button-strong-${strongNum}`}
                                     >
                                       {strongNum}
@@ -501,21 +555,22 @@ export function VerseDisplay(props: VerseDisplayProps) {
                           </div>
                         </div>
                       </PopoverContent>
-                    </Popover>
+                      </Popover>
 
-                    {showNotes && wordNote && (
-                      <div
-                        className="text-xs text-muted-foreground bg-muted/50 border rounded px-2 py-1 max-w-[200px]"
-                        data-testid={`word-note-${verse.id}-${idx}`}
-                      >
-                        <div className="flex items-start gap-1">
-                          <StickyNote className="h-3 w-3 text-primary flex-shrink-0 mt-0.5" />
-                          <span className="text-left break-words">
-                            {wordNote.content}
-                          </span>
+                      {showNotes && wordNote && (
+                        <div
+                          className="text-xs text-muted-foreground bg-muted/50 border rounded px-2 py-1 max-w-[200px]"
+                          data-testid={`word-note-${verse.id}-${idx}`}
+                        >
+                          <div className="flex items-start gap-1">
+                            <StickyNote className="h-3 w-3 text-primary flex-shrink-0 mt-0.5" />
+                            <span className="text-left break-words">
+                              {wordNote.content}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 );
               })}

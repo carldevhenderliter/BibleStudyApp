@@ -43,6 +43,7 @@ export default function NoteEditorExample() {
           note={note}
           verseId={note.verseId}
           verseReference="John 1:1"
+          fontSize={18}
           onSave={(content) => handleSaveEdit(note.id, content)}
           onDelete={() => handleDelete(note.id)}
           onCancel={() => {}}
@@ -53,6 +54,7 @@ export default function NoteEditorExample() {
         <NoteEditor
           verseId="john-1-1"
           verseReference="John 1:1"
+          fontSize={18}
           onSave={handleSaveNew}
           onCancel={() => setShowNewNote(false)}
         />
