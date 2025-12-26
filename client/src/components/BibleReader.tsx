@@ -213,6 +213,7 @@ export function BibleReader({
   const isDrawingRef = useRef(false);
   const activeStrokeRef = useRef<InkStroke | null>(null);
   const inkStrokesRef = useRef<InkStroke[]>([]);
+  const stylusTouchActiveRef = useRef(false);
   const rafRef = useRef<number | null>(null);
   const scrollRafRef = useRef<number | null>(null);
 
@@ -1300,6 +1301,7 @@ export function BibleReader({
     const vp = scrollViewportRef.current;
     if (vp) {
       vp.style.touchAction = "none";
+      vp.style.overflowY = "hidden";
       try {
         vp.setPointerCapture(event.pointerId);
       } catch {
@@ -1327,6 +1329,7 @@ export function BibleReader({
     const vp = scrollViewportRef.current;
     if (vp) {
       vp.style.touchAction = "pan-y";
+      vp.style.overflowY = "auto";
       try {
         vp.releasePointerCapture(event.pointerId);
       } catch {
@@ -1359,27 +1362,41 @@ export function BibleReader({
     const onTouchStart = (event: TouchEvent) => {
       if (!inkEnabled) return;
       if (!isStylusTouchEvent(event)) return;
+      stylusTouchActiveRef.current = true;
+      vp.style.touchAction = "none";
+      vp.style.overflowY = "hidden";
       event.preventDefault();
     };
 
     const onTouchMove = (event: TouchEvent) => {
       if (!inkEnabled) return;
-      if (!isStylusTouchEvent(event)) return;
+      if (!stylusTouchActiveRef.current && !isStylusTouchEvent(event)) return;
       event.preventDefault();
+    };
+
+    const onTouchEnd = () => {
+      if (!stylusTouchActiveRef.current) return;
+      stylusTouchActiveRef.current = false;
+      vp.style.touchAction = "pan-y";
+      vp.style.overflowY = "auto";
     };
 
     vp.addEventListener("pointerdown", onPointerDown, { passive: false });
     vp.addEventListener("pointermove", onPointerMove, { passive: false });
-    vp.addEventListener("touchstart", onTouchStart, { passive: false });
-    vp.addEventListener("touchmove", onTouchMove, { passive: false });
+    vp.addEventListener("touchstart", onTouchStart, { passive: false, capture: true });
+    vp.addEventListener("touchmove", onTouchMove, { passive: false, capture: true });
+    vp.addEventListener("touchend", onTouchEnd, { passive: true });
+    vp.addEventListener("touchcancel", onTouchEnd, { passive: true });
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerUp);
 
     return () => {
       vp.removeEventListener("pointerdown", onPointerDown);
       vp.removeEventListener("pointermove", onPointerMove);
-      vp.removeEventListener("touchstart", onTouchStart);
-      vp.removeEventListener("touchmove", onTouchMove);
+      vp.removeEventListener("touchstart", onTouchStart, { capture: true } as AddEventListenerOptions);
+      vp.removeEventListener("touchmove", onTouchMove, { capture: true } as AddEventListenerOptions);
+      vp.removeEventListener("touchend", onTouchEnd);
+      vp.removeEventListener("touchcancel", onTouchEnd);
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
     };
@@ -1389,6 +1406,7 @@ export function BibleReader({
     const vp = scrollViewportRef.current;
     if (!vp) return;
     vp.style.touchAction = "pan-y";
+    vp.style.overflowY = "auto";
   }, [inkEnabled]);
 
   // 🔍 Scroll to a verse when you click an occurrence
