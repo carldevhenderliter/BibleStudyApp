@@ -214,6 +214,8 @@ export function BibleReader({
   const activeStrokeRef = useRef<InkStroke | null>(null);
   const inkStrokesRef = useRef<InkStroke[]>([]);
   const stylusTouchActiveRef = useRef(false);
+  const pointerInkActiveRef = useRef(false);
+  const touchInkActiveRef = useRef(false);
   const inkRectRef = useRef<{ left: number; top: number } | null>(null);
   const rafRef = useRef<number | null>(null);
   const scrollRafRef = useRef<number | null>(null);
@@ -1240,6 +1242,18 @@ export function BibleReader({
     };
   };
 
+  const getInkPointFromTouch = (touch: Touch) => {
+    const canvas = inkCanvasRef.current;
+    const vp = scrollViewportRef.current;
+    if (!canvas || !vp) return null;
+    const rect = inkRectRef.current ?? canvas.getBoundingClientRect();
+    return {
+      x: touch.clientX - rect.left,
+      y: touch.clientY - rect.top + vp.scrollTop,
+      pressure: touch.force,
+    };
+  };
+
   const startInkStroke = (point: InkPoint) => {
     const settings = inkToolSettings[inkTool];
     const stroke: InkStroke = {
@@ -1299,6 +1313,7 @@ export function BibleReader({
     if (!inkEnabled) return;
     if (!isInkPointerEvent(event)) return;
     event.preventDefault();
+    pointerInkActiveRef.current = true;
     const vp = scrollViewportRef.current;
     if (vp) {
       vp.style.touchAction = "none";
@@ -1329,6 +1344,7 @@ export function BibleReader({
     if (!inkEnabled) return;
     if (!isInkPointerEvent(event)) return;
     event.preventDefault();
+    pointerInkActiveRef.current = false;
     const vp = scrollViewportRef.current;
     if (vp) {
       vp.style.touchAction = "pan-y";
@@ -1365,24 +1381,43 @@ export function BibleReader({
 
     const onTouchStart = (event: TouchEvent) => {
       if (!inkEnabled) return;
+      if (pointerInkActiveRef.current) return;
       if (!isStylusTouchEvent(event)) return;
       stylusTouchActiveRef.current = true;
+      touchInkActiveRef.current = true;
       vp.style.touchAction = "none";
       vp.style.overflowY = "hidden";
+      const canvas = inkCanvasRef.current;
+      inkRectRef.current = canvas ? canvas.getBoundingClientRect() : null;
+      const touch = event.touches[0];
+      const point = touch ? getInkPointFromTouch(touch) : null;
+      if (point) {
+        startInkStroke(point);
+      }
       event.preventDefault();
     };
 
     const onTouchMove = (event: TouchEvent) => {
       if (!inkEnabled) return;
+      if (pointerInkActiveRef.current) return;
       if (!stylusTouchActiveRef.current && !isStylusTouchEvent(event)) return;
+      if (!touchInkActiveRef.current) return;
+      const touch = event.touches[0];
+      const point = touch ? getInkPointFromTouch(touch) : null;
+      if (point) {
+        appendInkPoint(point);
+      }
       event.preventDefault();
     };
 
     const onTouchEnd = () => {
-      if (!stylusTouchActiveRef.current) return;
+      if (!stylusTouchActiveRef.current && !touchInkActiveRef.current) return;
       stylusTouchActiveRef.current = false;
+      touchInkActiveRef.current = false;
       vp.style.touchAction = "pan-y";
       vp.style.overflowY = "auto";
+      inkRectRef.current = null;
+      endInkStroke();
     };
 
     vp.addEventListener("pointerdown", onPointerDown, { passive: false });
