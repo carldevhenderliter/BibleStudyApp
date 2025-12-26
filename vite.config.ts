@@ -7,8 +7,8 @@ import { resolve } from "node:path";
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
-  // 👇 This MUST match your repo name exactly
-  base: "/BibleStudyApp/",
+  // 👇 Use repo base in prod, root in dev for local runs
+  base: process.env.NODE_ENV === "production" ? "/BibleStudyApp/" : "/",
 
   plugins: [
     react(),

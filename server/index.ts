@@ -16,6 +16,11 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: false }));
 
+// Avoid Vite crashing on OS/browser app-specific probes.
+app.use("/.well-known/appspecific", (_req, res) => {
+  res.status(204).end();
+});
+
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;

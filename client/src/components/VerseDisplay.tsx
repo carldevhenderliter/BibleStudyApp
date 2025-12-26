@@ -301,46 +301,9 @@ export function VerseDisplay(props: VerseDisplayProps) {
                       {wordNote ? "View/Edit Note" : "Add Note"}
                     </Button>
                   )}
-                  <div className="space-y-1">
-                    <div className="text-xs text-muted-foreground px-2">
-                      Highlight Color:
-                    </div>
-                    <div className="flex gap-1 flex-wrap px-2">
-                      {(
-                        [
-                          "yellow",
-                          "blue",
-                          "green",
-                          "pink",
-                          "purple",
-                          "orange",
-                          "red",
-                          "cyan",
-                          "gray",
-                        ] as const
-                      ).map((color) => (
-                        <button
-                          key={color}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            onHighlightWord(idx, token.english, color);
-                          }}
-                          onMouseDown={(e) => e.preventDefault()}
-                          className={`w-6 h-6 rounded ${
-                            highlightColorMap[color]
-                          } border-2 ${
-                            wordHighlight?.color === color
-                              ? "border-foreground"
-                              : "border-transparent"
-                          } hover:scale-110 transition-transform`}
-                          data-testid={`button-highlight-${color}-${verse.id}-${idx}`}
-                          aria-label={`Highlight ${color}`}
-                        />
-                      ))}
-                    </div>
-                  </div>
+                  {/* Highlight controls removed */}
                 </PopoverContent>
-                </Popover>
+              </Popover>
 
                 {showNotes && wordNote && (
                   <div
@@ -516,46 +479,9 @@ export function VerseDisplay(props: VerseDisplayProps) {
                             {wordNote ? "View/Edit Note" : "Add Note"}
                           </Button>
                         )}
-                        <div className="space-y-1">
-                          <div className="text-xs text-muted-foreground px-2">
-                            Highlight Color:
-                          </div>
-                          <div className="flex gap-1 flex-wrap px-2">
-                            {(
-                              [
-                                "yellow",
-                                "blue",
-                                "green",
-                                "pink",
-                                "purple",
-                                "orange",
-                                "red",
-                                "cyan",
-                                "gray",
-                              ] as const
-                            ).map((color) => (
-                              <button
-                                key={color}
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  onHighlightWord(idx, token.english, color);
-                                }}
-                                onMouseDown={(e) => e.preventDefault()}
-                                className={`w-6 h-6 rounded ${
-                                  highlightColorMap[color]
-                                } border-2 ${
-                                  wordHighlight?.color === color
-                                    ? "border-foreground"
-                                    : "border-transparent"
-                                } hover:scale-110 transition-transform`}
-                                data-testid={`button-highlight-${color}-${verse.id}-${idx}`}
-                                aria-label={`Highlight ${color}`}
-                              />
-                            ))}
-                          </div>
-                        </div>
+                        {/* Highlight controls removed */}
                       </PopoverContent>
-                      </Popover>
+                    </Popover>
 
                       {showNotes && wordNote && (
                         <div
