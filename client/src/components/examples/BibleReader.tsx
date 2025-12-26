@@ -9,6 +9,7 @@ export default function BibleReaderExample() {
   const [showStrongsEnglishOnly, setShowStrongsEnglishOnly] = useState(false);
   const [hideAllEnglish, setHideAllEnglish] = useState(false);
   const [showNotes, setShowNotes] = useState(true);
+  const [inkEnabled, setInkEnabled] = useState(false);
   const [fontSize, setFontSize] = useState(16);
   const [fontFamily, setFontFamily] = useState<"serif" | "sans" | "mono" | "gentium">("serif");
   const [displayMode, setDisplayMode] = useState<'verse' | 'book'>('verse');
@@ -25,6 +26,8 @@ export default function BibleReaderExample() {
           showStrongsEnglishOnly={showStrongsEnglishOnly}
           hideAllEnglish={hideAllEnglish}
           showNotes={showNotes}
+          inkEnabled={inkEnabled}
+          onToggleInkEnabled={setInkEnabled}
           fontSize={fontSize}
           fontFamily={fontFamily}
           displayMode={displayMode}
@@ -38,6 +41,7 @@ export default function BibleReaderExample() {
           showStrongsEnglishOnly={showStrongsEnglishOnly}
           hideAllEnglish={hideAllEnglish}
           showNotes={showNotes}
+          inkEnabled={inkEnabled}
           fontSize={fontSize}
           fontFamily={fontFamily}
           displayMode={displayMode}
@@ -47,6 +51,7 @@ export default function BibleReaderExample() {
           onToggleStrongsEnglishOnly={setShowStrongsEnglishOnly}
           onToggleHideAllEnglish={setHideAllEnglish}
           onToggleNotes={setShowNotes}
+          onToggleInkEnabled={setInkEnabled}
           onFontSizeChange={setFontSize}
           onFontFamilyChange={setFontFamily}
           onDisplayModeChange={setDisplayMode}

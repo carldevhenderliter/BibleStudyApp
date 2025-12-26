@@ -8,6 +8,7 @@ export default function ToolsPanelExample() {
   const [showStrongsEnglishOnly, setShowStrongsEnglishOnly] = useState(false);
   const [hideAllEnglish, setHideAllEnglish] = useState(false);
   const [showNotes, setShowNotes] = useState(true);
+  const [inkEnabled, setInkEnabled] = useState(false);
   const [fontSize, setFontSize] = useState(16);
   const [fontFamily, setFontFamily] = useState<"serif" | "sans" | "mono" | "gentium">("serif");
   const [displayMode, setDisplayMode] = useState<'verse' | 'book'>('verse');
@@ -22,6 +23,7 @@ export default function ToolsPanelExample() {
         showStrongsEnglishOnly={showStrongsEnglishOnly}
         hideAllEnglish={hideAllEnglish}
         showNotes={showNotes}
+        inkEnabled={inkEnabled}
         fontSize={fontSize}
         fontFamily={fontFamily}
         displayMode={displayMode}
@@ -31,6 +33,7 @@ export default function ToolsPanelExample() {
         onToggleStrongsEnglishOnly={setShowStrongsEnglishOnly}
         onToggleHideAllEnglish={setHideAllEnglish}
         onToggleNotes={setShowNotes}
+        onToggleInkEnabled={setInkEnabled}
         onFontSizeChange={setFontSize}
         onFontFamilyChange={setFontFamily}
         onDisplayModeChange={setDisplayMode}
@@ -47,6 +50,7 @@ export default function ToolsPanelExample() {
           <li>Strong's English Only: {showStrongsEnglishOnly ? 'On' : 'Off'}</li>
           <li>Hide All English: {hideAllEnglish ? 'On' : 'Off'}</li>
           <li>Show Notes: {showNotes ? 'On' : 'Off'}</li>
+          <li>Ink Enabled: {inkEnabled ? 'On' : 'Off'}</li>
           <li>Font Size: {fontSize}px</li>
           <li>Font Family: {fontFamily}</li>
         </ul>

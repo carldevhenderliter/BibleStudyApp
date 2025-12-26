@@ -22,6 +22,8 @@ interface BibleReaderProps {
   showStrongsEnglishOnly: boolean; // 🔹 new
   hideAllEnglish: boolean;
   showNotes: boolean;
+  inkEnabled: boolean;
+  onToggleInkEnabled: (value: boolean) => void;
   fontSize: number;
   fontFamily: "serif" | "sans" | "mono" | "gentium";
   displayMode: "verse" | "book";
@@ -156,6 +158,8 @@ export function BibleReader({
   showStrongsEnglishOnly,
   hideAllEnglish,
   showNotes,
+  inkEnabled,
+  onToggleInkEnabled,
   fontSize,
   fontFamily,
   displayMode,
@@ -178,7 +182,6 @@ export function BibleReader({
   const [activeNotesVerseId, setActiveNotesVerseId] = useState<string | null>(
     null
   );
-  const [inkEnabled, setInkEnabled] = useState(false);
   const [inkTool, setInkTool] = useState<InkTool>("pen");
   const [inkColor, setInkColor] = useState("#facc15");
   const [inkStrokes, setInkStrokes] = useState<InkStroke[]>([]);
@@ -211,6 +214,7 @@ export function BibleReader({
   const activeStrokeRef = useRef<InkStroke | null>(null);
   const inkStrokesRef = useRef<InkStroke[]>([]);
   const rafRef = useRef<number | null>(null);
+  const scrollRafRef = useRef<number | null>(null);
 
   const hasSelectedStrong = !!selectedStrong;
   const { toast } = useToast();
@@ -662,12 +666,20 @@ export function BibleReader({
       void loadPrevChapter();
     }
     updateActiveVerseFromScroll();
-    redrawInk();
+    if (inkEnabled) {
+      if (scrollRafRef.current === null) {
+        scrollRafRef.current = window.requestAnimationFrame(() => {
+          scrollRafRef.current = null;
+          redrawInk();
+        });
+      }
+    }
   }, [
     isLoadingNextChapter,
     isLoadingPrevChapter,
     loadNextChapter,
     loadPrevChapter,
+    inkEnabled,
     redrawInk,
     updateActiveVerseFromScroll,
   ]);
@@ -862,7 +874,9 @@ export function BibleReader({
 
   useEffect(() => {
     inkStrokesRef.current = inkStrokes;
-    redrawInk();
+    if (!isDrawingRef.current) {
+      redrawInk();
+    }
   }, [inkStrokes, redrawInk]);
 
   const scrollToVerse = useCallback((verseNumber: number) => {
@@ -1212,7 +1226,7 @@ export function BibleReader({
     }
   };
 
-  const getInkPointFromEvent = (event: React.PointerEvent<HTMLCanvasElement>) => {
+  const getInkPointFromEvent = (event: PointerEvent) => {
     const canvas = inkCanvasRef.current;
     const vp = scrollViewportRef.current;
     if (!canvas || !vp) return null;
@@ -1224,14 +1238,7 @@ export function BibleReader({
     };
   };
 
-  const handleInkPointerDown = (
-    event: React.PointerEvent<HTMLCanvasElement>
-  ) => {
-    if (!inkEnabled) return;
-    if (event.pointerType === "touch") return;
-    event.preventDefault();
-    const point = getInkPointFromEvent(event);
-    if (!point) return;
+  const startInkStroke = (point: InkPoint) => {
     const settings = inkToolSettings[inkTool];
     const stroke: InkStroke = {
       id: `ink-${Date.now()}`,
@@ -1243,18 +1250,11 @@ export function BibleReader({
     };
     activeStrokeRef.current = stroke;
     isDrawingRef.current = true;
-    inkCanvasRef.current?.setPointerCapture(event.pointerId);
     inkStrokesRef.current = [...inkStrokesRef.current, stroke];
     setInkStrokes(inkStrokesRef.current);
   };
 
-  const handleInkPointerMove = (
-    event: React.PointerEvent<HTMLCanvasElement>
-  ) => {
-    if (!inkEnabled || !isDrawingRef.current) return;
-    event.preventDefault();
-    const point = getInkPointFromEvent(event);
-    if (!point) return;
+  const appendInkPoint = (point: InkPoint) => {
     const strokes = inkStrokesRef.current;
     if (!strokes.length) return;
     const lastIndex = strokes.length - 1;
@@ -1276,15 +1276,65 @@ export function BibleReader({
     }
   };
 
-  const handleInkPointerUp = (
-    event: React.PointerEvent<HTMLCanvasElement>
-  ) => {
-    if (!inkEnabled) return;
-    event.preventDefault();
+  const endInkStroke = () => {
     isDrawingRef.current = false;
     activeStrokeRef.current = null;
-    inkCanvasRef.current?.releasePointerCapture(event.pointerId);
   };
+
+  const isInkPointerEvent = (event: PointerEvent) => {
+    if (event.pointerType === "pen") return true;
+    if (event.pointerType !== "touch") return false;
+    const hasPressure = typeof event.pressure === "number" && event.pressure > 0.1;
+    const narrowTip =
+      typeof event.width === "number" &&
+      typeof event.height === "number" &&
+      event.width <= 8 &&
+      event.height <= 8;
+    return hasPressure || narrowTip;
+  };
+
+  const handleInkPointerDown = (event: PointerEvent) => {
+    if (!inkEnabled) return;
+    if (!isInkPointerEvent(event)) return;
+    const point = getInkPointFromEvent(event);
+    if (!point) return;
+    startInkStroke(point);
+  };
+
+  const handleInkPointerMove = (event: PointerEvent) => {
+    if (!inkEnabled || !isDrawingRef.current) return;
+    if (!isInkPointerEvent(event)) return;
+    const point = getInkPointFromEvent(event);
+    if (!point) return;
+    appendInkPoint(point);
+  };
+
+  const handleInkPointerUp = (event: PointerEvent) => {
+    if (!inkEnabled) return;
+    if (!isInkPointerEvent(event)) return;
+    endInkStroke();
+  };
+
+  useEffect(() => {
+    const vp = scrollViewportRef.current;
+    if (!vp) return;
+
+    const onPointerDown = (event: PointerEvent) => handleInkPointerDown(event);
+    const onPointerMove = (event: PointerEvent) => handleInkPointerMove(event);
+    const onPointerUp = (event: PointerEvent) => handleInkPointerUp(event);
+
+    vp.addEventListener("pointerdown", onPointerDown);
+    vp.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+
+    return () => {
+      vp.removeEventListener("pointerdown", onPointerDown);
+      vp.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+    };
+  }, [handleInkPointerDown, handleInkPointerMove, handleInkPointerUp]);
 
   // 🔍 Scroll to a verse when you click an occurrence
   const handleJumpToOccurrence = (occ: StrongOccurrence) => {
@@ -1590,7 +1640,7 @@ export function BibleReader({
     (!!addingNote && addingNote.verseId === panelVerseId);
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full min-h-0 flex flex-col">
       {/* HEADER */}
       <div
         className={`border-b px-6 transition-all ${
@@ -1653,59 +1703,60 @@ export function BibleReader({
                     ? "border-primary bg-primary/10 text-primary"
                     : "border-border hover:border-primary/60 hover:bg-accent/40"
                 }`}
-                onClick={() => setInkEnabled((prev) => !prev)}
+                onClick={() => onToggleInkEnabled(!inkEnabled)}
               >
                 Ink {inkEnabled ? "On" : "Off"}
               </button>
-              <button
-                type="button"
-                className={`text-xs md:text-sm px-2 py-1 rounded-md border transition-colors ${
-                  inkTool === "pen"
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border hover:border-primary/60 hover:bg-accent/40"
-                }`}
-                onClick={() => setInkTool("pen")}
-                disabled={!inkEnabled}
-              >
-                Pen
-              </button>
-              <button
-                type="button"
-                className={`text-xs md:text-sm px-2 py-1 rounded-md border transition-colors ${
-                  inkTool === "highlighter"
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border hover:border-primary/60 hover:bg-accent/40"
-                }`}
-                onClick={() => setInkTool("highlighter")}
-                disabled={!inkEnabled}
-              >
-                Highlighter
-              </button>
-              <div className="flex items-center gap-1">
-                {inkColors.map((color) => (
+              {inkEnabled && (
+                <>
                   <button
-                    key={color.value}
                     type="button"
-                    className={`h-5 w-5 rounded-full border ${
-                      inkColor === color.value
-                        ? "border-foreground"
-                        : "border-transparent"
+                    className={`text-xs md:text-sm px-2 py-1 rounded-md border transition-colors ${
+                      inkTool === "pen"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border hover:border-primary/60 hover:bg-accent/40"
                     }`}
-                    style={{ backgroundColor: color.value }}
-                    onClick={() => setInkColor(color.value)}
-                    disabled={!inkEnabled}
-                    aria-label={`Ink color ${color.name}`}
-                  />
-                ))}
-              </div>
-              <button
-                type="button"
-                className="text-xs md:text-sm px-2 py-1 rounded-md border border-border hover:border-primary/60 hover:bg-accent/40 transition-colors"
-                onClick={handleClearInk}
-                disabled={!inkEnabled || inkStrokes.length === 0}
-              >
-                Clear
-              </button>
+                    onClick={() => setInkTool("pen")}
+                  >
+                    Pen
+                  </button>
+                  <button
+                    type="button"
+                    className={`text-xs md:text-sm px-2 py-1 rounded-md border transition-colors ${
+                      inkTool === "highlighter"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border hover:border-primary/60 hover:bg-accent/40"
+                    }`}
+                    onClick={() => setInkTool("highlighter")}
+                  >
+                    Highlighter
+                  </button>
+                  <div className="flex items-center gap-1">
+                    {inkColors.map((color) => (
+                      <button
+                        key={color.value}
+                        type="button"
+                        className={`h-5 w-5 rounded-full border ${
+                          inkColor === color.value
+                            ? "border-foreground"
+                            : "border-transparent"
+                        }`}
+                        style={{ backgroundColor: color.value }}
+                        onClick={() => setInkColor(color.value)}
+                        aria-label={`Ink color ${color.name}`}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="text-xs md:text-sm px-2 py-1 rounded-md border border-border hover:border-primary/60 hover:bg-accent/40 transition-colors"
+                    onClick={handleClearInk}
+                    disabled={inkStrokes.length === 0}
+                  >
+                    Clear
+                  </button>
+                </>
+              )}
             </div>
             <div className="relative w-full md:w-[260px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 h-4 w-4 pointer-events-none" />
@@ -1755,9 +1806,9 @@ export function BibleReader({
       </div>
 
       {/* MAIN SCROLL AREA */}
-      <div className="relative flex-1">
+      <div className="relative flex-1 min-h-0">
         <ScrollArea
-          className="flex-1"
+          className="h-full flex-1 min-h-0"
           viewportRef={scrollViewportRef}
           onViewportScroll={handleScroll}
         >
@@ -2285,17 +2336,12 @@ export function BibleReader({
           </div>
           </div>
         </ScrollArea>
-        <canvas
-          ref={inkCanvasRef}
-          className={`absolute inset-0 z-20 ${
-            inkEnabled ? "pointer-events-auto" : "pointer-events-none"
-          }`}
-          style={{ touchAction: inkEnabled ? "none" : "auto" }}
-          onPointerDown={handleInkPointerDown}
-          onPointerMove={handleInkPointerMove}
-          onPointerUp={handleInkPointerUp}
-          onPointerCancel={handleInkPointerUp}
-        />
+        {inkEnabled && (
+          <canvas
+            ref={inkCanvasRef}
+            className="absolute inset-0 z-20 pointer-events-none"
+          />
+        )}
       </div>
 
     </div>

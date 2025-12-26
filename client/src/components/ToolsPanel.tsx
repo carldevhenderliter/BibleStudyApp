@@ -18,6 +18,7 @@ import {
   Eye,
   StickyNote,
   EyeOff,
+  Pencil,
 } from "lucide-react";
 import { Translation, translations } from "@/lib/bibleData";
 
@@ -27,6 +28,7 @@ interface ToolsPanelProps {
   showStrongsEnglishOnly: boolean;
   hideAllEnglish: boolean;
   showNotes: boolean;
+  inkEnabled: boolean;
   fontSize: number;
   fontFamily: "serif" | "sans" | "mono" | "gentium";
   displayMode: "verse" | "book";
@@ -36,6 +38,7 @@ interface ToolsPanelProps {
   onToggleStrongsEnglishOnly: (value: boolean) => void;
   onToggleHideAllEnglish: (value: boolean) => void;
   onToggleNotes: (value: boolean) => void;
+  onToggleInkEnabled: (value: boolean) => void;
   onFontSizeChange: (value: number) => void;
   onFontFamilyChange: (value: "serif" | "sans" | "mono" | "gentium") => void;
   onDisplayModeChange: (mode: "verse" | "book") => void;
@@ -48,6 +51,7 @@ export function ToolsPanel({
   showStrongsEnglishOnly,
   hideAllEnglish,
   showNotes,
+  inkEnabled,
   fontSize,
   fontFamily,
   displayMode,
@@ -57,6 +61,7 @@ export function ToolsPanel({
   onToggleStrongsEnglishOnly,
   onToggleHideAllEnglish,
   onToggleNotes,
+  onToggleInkEnabled,
   onFontSizeChange,
   onFontFamilyChange,
   onDisplayModeChange,
@@ -97,6 +102,29 @@ export function ToolsPanel({
               ))}
             </SelectContent>
           </Select>
+        </CardContent>
+      </Card>
+
+      {/* Ink */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Pencil className="h-4 w-4" />
+            Ink
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="ink-toggle" className="text-sm cursor-pointer">
+              Enable Drawing
+            </Label>
+            <Switch
+              id="ink-toggle"
+              checked={inkEnabled}
+              onCheckedChange={onToggleInkEnabled}
+              data-testid="switch-ink-enabled"
+            />
+          </div>
         </CardContent>
       </Card>
 
