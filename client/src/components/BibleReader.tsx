@@ -1296,6 +1296,7 @@ export function BibleReader({
   const handleInkPointerDown = (event: PointerEvent) => {
     if (!inkEnabled) return;
     if (!isInkPointerEvent(event)) return;
+    event.preventDefault();
     const point = getInkPointFromEvent(event);
     if (!point) return;
     startInkStroke(point);
@@ -1304,6 +1305,7 @@ export function BibleReader({
   const handleInkPointerMove = (event: PointerEvent) => {
     if (!inkEnabled || !isDrawingRef.current) return;
     if (!isInkPointerEvent(event)) return;
+    event.preventDefault();
     const point = getInkPointFromEvent(event);
     if (!point) return;
     appendInkPoint(point);
@@ -1312,6 +1314,7 @@ export function BibleReader({
   const handleInkPointerUp = (event: PointerEvent) => {
     if (!inkEnabled) return;
     if (!isInkPointerEvent(event)) return;
+    event.preventDefault();
     endInkStroke();
   };
 
@@ -1323,8 +1326,8 @@ export function BibleReader({
     const onPointerMove = (event: PointerEvent) => handleInkPointerMove(event);
     const onPointerUp = (event: PointerEvent) => handleInkPointerUp(event);
 
-    vp.addEventListener("pointerdown", onPointerDown);
-    vp.addEventListener("pointermove", onPointerMove);
+    vp.addEventListener("pointerdown", onPointerDown, { passive: false });
+    vp.addEventListener("pointermove", onPointerMove, { passive: false });
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerUp);
 
