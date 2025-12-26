@@ -214,6 +214,7 @@ export function BibleReader({
   const activeStrokeRef = useRef<InkStroke | null>(null);
   const inkStrokesRef = useRef<InkStroke[]>([]);
   const stylusTouchActiveRef = useRef(false);
+  const inkRectRef = useRef<{ left: number; top: number } | null>(null);
   const rafRef = useRef<number | null>(null);
   const scrollRafRef = useRef<number | null>(null);
 
@@ -309,7 +310,7 @@ export function BibleReader({
     ctx.clearRect(0, 0, width, height);
 
     const scrollTop = vp.scrollTop;
-    for (const stroke of inkStrokes) {
+    for (const stroke of inkStrokesRef.current) {
       if (stroke.points.length < 2) continue;
       ctx.globalAlpha = stroke.alpha;
       ctx.strokeStyle = stroke.color;
@@ -329,7 +330,7 @@ export function BibleReader({
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
-  }, [inkStrokes]);
+  }, []);
 
   const drawStrokeSegment = useCallback((stroke: InkStroke) => {
     const canvas = inkCanvasRef.current;
@@ -854,14 +855,14 @@ export function BibleReader({
         ...parsed,
         [activeNotebookId]: {
           ...(parsed[activeNotebookId] ?? {}),
-          [chapterKey]: inkStrokesRef.current,
+          [chapterKey]: inkStrokes,
         },
       };
       localStorage.setItem(inkStorageKey, JSON.stringify(next));
     } catch (e) {
       console.warn("Failed to save ink strokes", e);
     }
-  }, [activeNotebookId, chapterKey, inkStorageKey]);
+  }, [activeNotebookId, chapterKey, inkStorageKey, inkStrokes]);
 
   useEffect(() => {
     resizeInkCanvas();
@@ -1231,7 +1232,7 @@ export function BibleReader({
     const canvas = inkCanvasRef.current;
     const vp = scrollViewportRef.current;
     if (!canvas || !vp) return null;
-    const rect = canvas.getBoundingClientRect();
+    const rect = inkRectRef.current ?? canvas.getBoundingClientRect();
     return {
       x: event.clientX - rect.left,
       y: event.clientY - rect.top + vp.scrollTop,
@@ -1272,7 +1273,6 @@ export function BibleReader({
     if (rafRef.current === null) {
       rafRef.current = window.requestAnimationFrame(() => {
         rafRef.current = null;
-        setInkStrokes([...inkStrokesRef.current]);
       });
     }
   };
@@ -1280,6 +1280,7 @@ export function BibleReader({
   const endInkStroke = () => {
     isDrawingRef.current = false;
     activeStrokeRef.current = null;
+    setInkStrokes([...inkStrokesRef.current]);
   };
 
   const isInkPointerEvent = (event: PointerEvent) => {
@@ -1308,6 +1309,8 @@ export function BibleReader({
         // Ignore capture errors on unsupported browsers.
       }
     }
+    const canvas = inkCanvasRef.current;
+    inkRectRef.current = canvas ? canvas.getBoundingClientRect() : null;
     const point = getInkPointFromEvent(event);
     if (!point) return;
     startInkStroke(point);
@@ -1336,6 +1339,7 @@ export function BibleReader({
         // Ignore capture errors on unsupported browsers.
       }
     }
+    inkRectRef.current = null;
     endInkStroke();
   };
 
