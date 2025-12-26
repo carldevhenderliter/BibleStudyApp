@@ -1297,6 +1297,15 @@ export function BibleReader({
     if (!inkEnabled) return;
     if (!isInkPointerEvent(event)) return;
     event.preventDefault();
+    const vp = scrollViewportRef.current;
+    if (vp) {
+      vp.style.touchAction = "none";
+      try {
+        vp.setPointerCapture(event.pointerId);
+      } catch {
+        // Ignore capture errors on unsupported browsers.
+      }
+    }
     const point = getInkPointFromEvent(event);
     if (!point) return;
     startInkStroke(point);
@@ -1315,7 +1324,28 @@ export function BibleReader({
     if (!inkEnabled) return;
     if (!isInkPointerEvent(event)) return;
     event.preventDefault();
+    const vp = scrollViewportRef.current;
+    if (vp) {
+      vp.style.touchAction = "pan-y";
+      try {
+        vp.releasePointerCapture(event.pointerId);
+      } catch {
+        // Ignore capture errors on unsupported browsers.
+      }
+    }
     endInkStroke();
+  };
+
+  const isStylusTouchEvent = (event: TouchEvent) => {
+    return Array.from(event.touches).some((touch) => {
+      const anyTouch = touch as Touch & { touchType?: string };
+      if (anyTouch.touchType === "stylus") return true;
+      const force = typeof touch.force === "number" ? touch.force : 0;
+      const radiusX = typeof touch.radiusX === "number" ? touch.radiusX : 0;
+      const radiusY = typeof touch.radiusY === "number" ? touch.radiusY : 0;
+      const radius = Math.max(radiusX || 0, radiusY || 0);
+      return force > 0.1 && radius > 0 && radius <= 5;
+    });
   };
 
   useEffect(() => {
@@ -1326,18 +1356,40 @@ export function BibleReader({
     const onPointerMove = (event: PointerEvent) => handleInkPointerMove(event);
     const onPointerUp = (event: PointerEvent) => handleInkPointerUp(event);
 
+    const onTouchStart = (event: TouchEvent) => {
+      if (!inkEnabled) return;
+      if (!isStylusTouchEvent(event)) return;
+      event.preventDefault();
+    };
+
+    const onTouchMove = (event: TouchEvent) => {
+      if (!inkEnabled) return;
+      if (!isStylusTouchEvent(event)) return;
+      event.preventDefault();
+    };
+
     vp.addEventListener("pointerdown", onPointerDown, { passive: false });
     vp.addEventListener("pointermove", onPointerMove, { passive: false });
+    vp.addEventListener("touchstart", onTouchStart, { passive: false });
+    vp.addEventListener("touchmove", onTouchMove, { passive: false });
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerUp);
 
     return () => {
       vp.removeEventListener("pointerdown", onPointerDown);
       vp.removeEventListener("pointermove", onPointerMove);
+      vp.removeEventListener("touchstart", onTouchStart);
+      vp.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
     };
-  }, [handleInkPointerDown, handleInkPointerMove, handleInkPointerUp]);
+  }, [handleInkPointerDown, handleInkPointerMove, handleInkPointerUp, inkEnabled]);
+
+  useEffect(() => {
+    const vp = scrollViewportRef.current;
+    if (!vp) return;
+    vp.style.touchAction = "pan-y";
+  }, [inkEnabled]);
 
   // 🔍 Scroll to a verse when you click an occurrence
   const handleJumpToOccurrence = (occ: StrongOccurrence) => {
