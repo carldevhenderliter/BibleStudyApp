@@ -104,6 +104,8 @@ type InkPoint = {
   pressure?: number;
 };
 
+type TouchLike = Touch | React.Touch;
+
 type InkStroke = {
   id: string;
   tool: InkTool;
@@ -1812,7 +1814,7 @@ export function BibleReader({
     };
   };
 
-  const getInkPointFromTouch = (touch: Touch) => {
+  const getInkPointFromTouch = (touch: TouchLike) => {
     const canvas = inkCanvasRef.current;
     const vp = scrollViewportRef.current;
     if (!canvas || !vp) return null;
@@ -1835,7 +1837,7 @@ export function BibleReader({
     };
   };
 
-  const getInkViewportPointFromTouch = (touch: Touch) => {
+  const getInkViewportPointFromTouch = (touch: TouchLike) => {
     const canvas = inkCanvasRef.current;
     if (!canvas) return null;
     const rect = inkRectRef.current ?? canvas.getBoundingClientRect();
@@ -1865,7 +1867,7 @@ export function BibleReader({
     };
   };
 
-  const getTextBoxPointFromTouch = (touch: Touch) => {
+  const getTextBoxPointFromTouch = (touch: TouchLike) => {
     const area = notesAreaRef.current;
     if (!area) return null;
     const rect = area.getBoundingClientRect();
@@ -1917,7 +1919,7 @@ export function BibleReader({
     };
   };
 
-  const getContentPointFromTouch = (touch: Touch) => {
+  const getContentPointFromTouch = (touch: TouchLike) => {
     const content = verseContentRef.current;
     const vp = scrollViewportRef.current;
     if (!content || !vp) return null;
