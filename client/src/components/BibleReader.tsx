@@ -1,18 +1,40 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import type { DragEvent } from "react";
 import { BibleVerse, Highlight, Note } from "@shared/schema";
 import { VerseDisplay } from "./VerseDisplay";
-import { NoteEditor, NoteTheme, NoteSaveOptions } from "./NoteEditor";
+import { NoteTheme, NoteSaveOptions } from "./NoteEditor";
 import { HighlightToolbar } from "./HighlightToolbar";
 import { StrongDefinitionInline } from "./StrongDefinitionInline";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import {
   getVersesByChapter,
   BibleVerseWithTokens,
   Translation,
   bibleBooks,
+  translations,
 } from "@/lib/bibleData";
 import { useToast } from "@/hooks/use-toast";
-import { Search, ChevronDown } from "lucide-react";
+import {
+  Search,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Moon,
+  Sun,
+  PenTool,
+  Highlighter,
+  Type,
+  Eraser,
+  Settings,
+  BookOpen,
+  MousePointer2,
+  Lasso,
+} from "lucide-react";
 
 interface BibleReaderProps {
   book: string;
@@ -28,6 +50,17 @@ interface BibleReaderProps {
   fontFamily: "serif" | "sans" | "mono" | "gentium";
   displayMode: "verse" | "book";
   selectedTranslation: Translation;
+  theme?: "light" | "dark";
+  onToggleTheme?: () => void;
+  onToggleStrongsNumbers: (value: boolean) => void;
+  onToggleInterlinear: (value: boolean) => void;
+  onToggleStrongsEnglishOnly: (value: boolean) => void;
+  onToggleHideAllEnglish: (value: boolean) => void;
+  onToggleNotes: (value: boolean) => void;
+  onFontSizeChange: (value: number) => void;
+  onFontFamilyChange: (value: "serif" | "sans" | "mono" | "gentium") => void;
+  onDisplayModeChange: (mode: "verse" | "book") => void;
+  onTranslationChange: (translation: Translation) => void;
   // From Home, used for cross-reference navigation
   onNavigate?: (book: string, chapter: number, verse?: number) => void;
 }
@@ -63,7 +96,7 @@ type Notebook = {
   createdAt: number;
 };
 
-type InkTool = "pen" | "highlighter";
+type InkTool = "pen" | "highlighter" | "textbox" | "eraser" | "select" | "lasso";
 
 type InkPoint = {
   x: number;
@@ -80,11 +113,42 @@ type InkStroke = {
   points: InkPoint[];
 };
 
+type InkText = {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  size: number;
+  color: string;
+};
+
+type InkTextBox = {
+  id: string;
+  verseIds: string[];
+  noteMode: "single" | "range";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string;
+  borderWidth: number;
+  text: string;
+  noteId?: string;
+  isEditing: boolean;
+};
+
 type SelectedStrong = {
   strongNumber: string;
   verseReference: string;
   verseText: string;
   matchText: string;
+};
+
+type LassoWord = {
+  id: string;
+  verseId: string;
+  text: string;
+  kind: "english" | "greek";
 };
 
 type StrongOccurrence = {
@@ -164,6 +228,17 @@ export function BibleReader({
   fontFamily,
   displayMode,
   selectedTranslation,
+  theme,
+  onToggleTheme,
+  onToggleStrongsNumbers,
+  onToggleInterlinear,
+  onToggleStrongsEnglishOnly,
+  onToggleHideAllEnglish,
+  onToggleNotes,
+  onFontSizeChange,
+  onFontFamilyChange,
+  onDisplayModeChange,
+  onTranslationChange,
   onNavigate,
 }: BibleReaderProps) {
   const [verses, setVerses] = useState<BibleVerseWithTokens[]>([]);
@@ -182,9 +257,42 @@ export function BibleReader({
   const [activeNotesVerseId, setActiveNotesVerseId] = useState<string | null>(
     null
   );
-  const [inkTool, setInkTool] = useState<InkTool>("pen");
+  const [noteLinkVerseIds, setNoteLinkVerseIds] = useState<string[]>([]);
+  const [noteLinkRangeEndVerse, setNoteLinkRangeEndVerse] = useState<number | null>(null);
+  const [noteLinkRangeMode, setNoteLinkRangeMode] = useState(false);
+  const [notesPanelTab, setNotesPanelTab] = useState<
+    "notes" | "definition" | "occurrences"
+  >("notes");
+  const [inkTool, setInkTool] = useState<InkTool>("select");
   const [inkColor, setInkColor] = useState("#facc15");
+  const [penSize, setPenSize] = useState(2.5);
+  const [highlighterSize, setHighlighterSize] = useState(14);
+  const [highlighterOpacity, setHighlighterOpacity] = useState(0.35);
+  const [eraserSize, setEraserSize] = useState(16);
   const [inkStrokes, setInkStrokes] = useState<InkStroke[]>([]);
+  const [inkTexts, setInkTexts] = useState<InkText[]>([]);
+  const [inkTextBoxes, setInkTextBoxes] = useState<InkTextBox[]>([]);
+  const [showInkSettings, setShowInkSettings] = useState(false);
+  const [inkOverlayScrollTop, setInkOverlayScrollTop] = useState(0);
+  const [isInkScrolling, setIsInkScrolling] = useState(false);
+  const [bookPopoverOpen, setBookPopoverOpen] = useState(false);
+  const [bookPickerBook, setBookPickerBook] = useState(book);
+  const [bookPickerChapter, setBookPickerChapter] = useState(chapter);
+  const [bookPickerOldOpen, setBookPickerOldOpen] = useState(true);
+  const [bookPickerNewOpen, setBookPickerNewOpen] = useState(false);
+  const [lassoRect, setLassoRect] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [lassoSelectedWords, setLassoSelectedWords] = useState<LassoWord[]>([]);
+  const [lassoSelectionBounds, setLassoSelectionBounds] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const [highlightToolbar, setHighlightToolbar] = useState<{
     show: boolean;
     position: { x: number; y: number };
@@ -209,22 +317,52 @@ export function BibleReader({
     { label: string; value: string }[]
   >([]);
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
+  const verseContentRef = useRef<HTMLDivElement | null>(null);
+  const notesPanelRef = useRef<HTMLDivElement | null>(null);
   const inkCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const lassoStartRef = useRef<InkPoint | null>(null);
+  const lassoEndRef = useRef<InkPoint | null>(null);
   const isDrawingRef = useRef(false);
   const activeStrokeRef = useRef<InkStroke | null>(null);
   const inkStrokesRef = useRef<InkStroke[]>([]);
+  const inkTextsRef = useRef<InkText[]>([]);
+  const inkTextBoxesRef = useRef<InkTextBox[]>([]);
+  const activeTextBoxRef = useRef<InkTextBox | null>(null);
+  const textBoxStartRef = useRef<InkPoint | null>(null);
+  const notesAreaRef = useRef<HTMLDivElement | null>(null);
+  const textBoxResizeRef = useRef<{
+    id: string;
+    startX: number;
+    startY: number;
+    startLeft: number;
+    startWidth: number;
+    startHeight: number;
+  } | null>(null);
+  const notesPanelResizeRef = useRef<{
+    startX: number;
+    startWidth: number;
+  } | null>(null);
   const stylusTouchActiveRef = useRef(false);
   const pointerInkActiveRef = useRef(false);
   const touchInkActiveRef = useRef(false);
+  const stylusTouchIdRef = useRef<number | null>(null);
   const inkRectRef = useRef<{ left: number; top: number } | null>(null);
+  const skipNextInkRedrawRef = useRef(false);
+  const lastInkPointTimeRef = useRef(0);
   const rafRef = useRef<number | null>(null);
   const scrollRafRef = useRef<number | null>(null);
+  const inkScrollHideTimeoutRef = useRef<number | null>(null);
+  const prevStrongNumberRef = useRef<string | null>(null);
+  const eraserCursorRef = useRef<HTMLDivElement | null>(null);
 
   const hasSelectedStrong = !!selectedStrong;
   const { toast } = useToast();
   const notebookStorageKey = "bible-notebooks";
   const legacyNotesKey = "bible-notes";
   const inkStorageKey = "bible-ink";
+  const inkTextStorageKey = "bible-ink-texts";
+  const [notesPanelWidth, setNotesPanelWidth] = useState<number | null>(null);
+  const [isResizingNotesPanel, setIsResizingNotesPanel] = useState(false);
   const chapterCountMap = useMemo(() => {
     const map: Record<string, number> = {};
     bibleBooks.forEach(({ name, chapters }) => {
@@ -250,13 +388,6 @@ export function BibleReader({
   );
 
   const chapterKey = useMemo(() => `${book}::${chapter}`, [book, chapter]);
-  const inkToolSettings = useMemo(
-    () => ({
-      pen: { baseWidth: 2.5, alpha: 1 },
-      highlighter: { baseWidth: 14, alpha: 0.35 },
-    }),
-    []
-  );
   const inkColors = useMemo(
     () => [
       { name: "Yellow", value: "#facc15" },
@@ -305,13 +436,31 @@ export function BibleReader({
     if (!canvas || !vp) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = 1;
     const width = canvas.width / dpr;
     const height = canvas.height / dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
     const scrollTop = vp.scrollTop;
+    const drawSmoothStroke = (stroke: InkStroke, scrollTop: number) => {
+      if (stroke.points.length < 2) return;
+      const points = stroke.points;
+      ctx.beginPath();
+      const start = points[0];
+      ctx.moveTo(start.x, start.y - scrollTop);
+      for (let i = 1; i < points.length - 1; i += 1) {
+        const curr = points[i];
+        const next = points[i + 1];
+        const midX = (curr.x + next.x) / 2;
+        const midY = (curr.y + next.y) / 2;
+        ctx.quadraticCurveTo(curr.x, curr.y - scrollTop, midX, midY - scrollTop);
+      }
+      const last = points[points.length - 1];
+      ctx.lineTo(last.x, last.y - scrollTop);
+      ctx.stroke();
+    };
+
     for (const stroke of inkStrokesRef.current) {
       if (stroke.points.length < 2) continue;
       ctx.globalAlpha = stroke.alpha;
@@ -319,17 +468,30 @@ export function BibleReader({
       ctx.lineWidth = stroke.baseWidth;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
-      ctx.beginPath();
-      stroke.points.forEach((pt, idx) => {
-        const x = pt.x;
-        const y = pt.y - scrollTop;
-        if (idx === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
-        }
-      });
-      ctx.stroke();
+      if (stroke.tool === "highlighter") {
+        drawSmoothStroke(stroke, scrollTop);
+      } else {
+        ctx.beginPath();
+        stroke.points.forEach((pt, idx) => {
+          const x = pt.x;
+          const y = pt.y - scrollTop;
+          if (idx === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        });
+        ctx.stroke();
+      }
+    }
+
+    if (inkTextsRef.current.length > 0) {
+      ctx.fillStyle = "#111827";
+      for (const text of inkTextsRef.current) {
+        ctx.font = `${text.size}px serif`;
+        ctx.fillStyle = text.color;
+        ctx.fillText(text.text, text.x, text.y - scrollTop);
+      }
     }
     ctx.globalAlpha = 1;
   }, []);
@@ -341,7 +503,7 @@ export function BibleReader({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     if (stroke.points.length < 2) return;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.globalAlpha = stroke.alpha;
     ctx.strokeStyle = stroke.color;
@@ -355,23 +517,177 @@ export function BibleReader({
     const scrollTop = vp.scrollTop;
 
     ctx.beginPath();
-    ctx.moveTo(prev.x, prev.y - scrollTop);
-    ctx.lineTo(curr.x, curr.y - scrollTop);
+    if (stroke.tool === "highlighter" && stroke.points.length >= 3) {
+      const prevPrev = stroke.points[lastIndex - 2];
+      const mid1 = {
+        x: (prevPrev.x + prev.x) / 2,
+        y: (prevPrev.y + prev.y) / 2,
+      };
+      const mid2 = {
+        x: (prev.x + curr.x) / 2,
+        y: (prev.y + curr.y) / 2,
+      };
+      ctx.moveTo(mid1.x, mid1.y - scrollTop);
+      ctx.quadraticCurveTo(prev.x, prev.y - scrollTop, mid2.x, mid2.y - scrollTop);
+    } else {
+      ctx.moveTo(prev.x, prev.y - scrollTop);
+      ctx.lineTo(curr.x, curr.y - scrollTop);
+    }
     ctx.stroke();
     ctx.globalAlpha = 1;
+  }, []);
+
+  const drawStrokeFromIndex = useCallback((stroke: InkStroke, fromIndex: number) => {
+    const canvas = inkCanvasRef.current;
+    const vp = scrollViewportRef.current;
+    if (!canvas || !vp) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const dpr = 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.globalAlpha = stroke.alpha;
+    ctx.strokeStyle = stroke.color;
+    ctx.lineWidth = stroke.baseWidth;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    const scrollTop = vp.scrollTop;
+    const points = stroke.points;
+    if (points.length < 2 || fromIndex >= points.length) return;
+    const startIndex = Math.max(1, fromIndex);
+    const start = points[startIndex - 1];
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y - scrollTop);
+    for (let i = startIndex; i < points.length; i += 1) {
+      const pt = points[i];
+      ctx.lineTo(pt.x, pt.y - scrollTop);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }, []);
+
+  const eraseAtPoint = useCallback(
+    (inkPoint: InkPoint | null, textBoxPoint?: InkPoint | null) => {
+      if (!inkPoint && !textBoxPoint) return;
+      const radius = Math.max(4, eraserSize);
+      const radiusSq = radius * radius;
+      let didErase = false;
+
+      if (inkPoint && inkStrokesRef.current.length > 0) {
+        const remaining = inkStrokesRef.current.filter((stroke) =>
+          !stroke.points.some((pt) => {
+            const dx = pt.x - inkPoint.x;
+            const dy = pt.y - inkPoint.y;
+            return dx * dx + dy * dy <= radiusSq;
+          })
+        );
+        if (remaining.length !== inkStrokesRef.current.length) {
+          inkStrokesRef.current = remaining;
+          setInkStrokes(remaining);
+          didErase = true;
+        }
+      }
+
+      if (textBoxPoint && inkTextBoxesRef.current.length > 0) {
+        const remaining = inkTextBoxesRef.current.filter((box) => {
+          const left = box.x - radius;
+          const right = box.x + box.width + radius;
+          const top = box.y - radius;
+          const bottom = box.y + box.height + radius;
+          return (
+            textBoxPoint.x < left ||
+            textBoxPoint.x > right ||
+            textBoxPoint.y < top ||
+            textBoxPoint.y > bottom
+          );
+        });
+        if (remaining.length !== inkTextBoxesRef.current.length) {
+          inkTextBoxesRef.current = remaining;
+          setInkTextBoxes(remaining);
+          didErase = true;
+        }
+      }
+
+      if (inkPoint && inkTextsRef.current.length > 0) {
+        const canvas = inkCanvasRef.current;
+        const ctx = canvas?.getContext("2d") ?? null;
+        const remaining = inkTextsRef.current.filter((text) => {
+          const size = Math.max(1, text.size);
+          let width = text.text.length * size * 0.6;
+          if (ctx) {
+            ctx.font = `${size}px serif`;
+            width = ctx.measureText(text.text).width;
+          }
+          const left = text.x - radius;
+          const right = text.x + width + radius;
+          const top = text.y - size - radius;
+          const bottom = text.y + radius;
+          return (
+            inkPoint.x < left ||
+            inkPoint.x > right ||
+            inkPoint.y < top ||
+            inkPoint.y > bottom
+          );
+        });
+        if (remaining.length !== inkTextsRef.current.length) {
+          inkTextsRef.current = remaining;
+          setInkTexts(remaining);
+          didErase = true;
+        }
+      }
+
+      if (didErase) {
+        redrawInk();
+      }
+    },
+    [eraserSize, redrawInk]
+  );
+
+  const updateEraserCursor = useCallback(
+    (point: InkPoint | null) => {
+      const cursor = eraserCursorRef.current;
+      if (!cursor || !point) return;
+      const size = eraserSize;
+      const half = size / 2;
+      cursor.style.width = `${size}px`;
+      cursor.style.height = `${size}px`;
+      cursor.style.transform = `translate3d(${point.x - half}px, ${point.y - half}px, 0)`;
+      cursor.style.opacity = "1";
+    },
+    [eraserSize]
+  );
+
+  const hideEraserCursor = useCallback(() => {
+    const cursor = eraserCursorRef.current;
+    if (!cursor) return;
+    cursor.style.opacity = "0";
   }, []);
 
   const handleClearInk = useCallback(() => {
     inkStrokesRef.current = [];
     setInkStrokes([]);
+    inkTextsRef.current = [];
+    setInkTexts([]);
+    inkTextBoxesRef.current = [];
+    setInkTextBoxes([]);
     redrawInk();
   }, [redrawInk]);
+
+  const updateTextBoxById = useCallback(
+    (id: string, updater: (box: InkTextBox) => InkTextBox) => {
+      inkTextBoxesRef.current = inkTextBoxesRef.current.map((box) =>
+        box.id === id ? updater(box) : box
+      );
+      setInkTextBoxes(inkTextBoxesRef.current);
+    },
+    []
+  );
 
   const resizeInkCanvas = useCallback(() => {
     const canvas = inkCanvasRef.current;
     const vp = scrollViewportRef.current;
     if (!canvas || !vp) return;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = 1;
     const width = vp.clientWidth;
     const height = vp.clientHeight;
     canvas.width = Math.max(1, Math.floor(width * dpr));
@@ -670,7 +986,19 @@ export function BibleReader({
       void loadPrevChapter();
     }
     updateActiveVerseFromScroll();
+    setInkOverlayScrollTop(vp.scrollTop);
     if (inkEnabled) {
+      if (inkScrollHideTimeoutRef.current !== null) {
+        window.clearTimeout(inkScrollHideTimeoutRef.current);
+      }
+      setIsInkScrolling(true);
+      inkScrollHideTimeoutRef.current = window.setTimeout(() => {
+        inkScrollHideTimeoutRef.current = null;
+        setIsInkScrolling(false);
+      }, 80);
+      if (isDrawingRef.current) {
+        return;
+      }
       if (scrollRafRef.current === null) {
         scrollRafRef.current = window.requestAnimationFrame(() => {
           scrollRafRef.current = null;
@@ -689,14 +1017,95 @@ export function BibleReader({
   ]);
 
   useEffect(() => {
+    return () => {
+      if (inkScrollHideTimeoutRef.current !== null) {
+        window.clearTimeout(inkScrollHideTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     updateActiveVerseFromScroll();
   }, [verses, updateActiveVerseFromScroll]);
+
+  useEffect(() => {
+    const viewport = scrollViewportRef.current;
+    if (!viewport) return;
+    if (inkTool === "lasso") {
+      viewport.style.overflowY = "hidden";
+      viewport.style.touchAction = "none";
+      viewport.style.overscrollBehavior = "none";
+    } else {
+      viewport.style.overflowY = "";
+      viewport.style.touchAction = "";
+      viewport.style.overscrollBehavior = "";
+    }
+  }, [inkTool]);
 
   useEffect(() => {
     if (addingNote?.verseId) {
       setActiveNotesVerseId(addingNote.verseId);
     }
   }, [addingNote?.verseId]);
+
+  useEffect(() => {
+    const currentStrong = selectedStrong?.strongNumber ?? null;
+    if (currentStrong && currentStrong !== prevStrongNumberRef.current) {
+      setNotesPanelTab("definition");
+    }
+    if (!currentStrong && notesPanelTab !== "notes") {
+      setNotesPanelTab("notes");
+    }
+    prevStrongNumberRef.current = currentStrong;
+  }, [notesPanelTab, selectedStrong]);
+
+  useEffect(() => {
+    if (!verses.length) return;
+    if (noteLinkRangeEndVerse === null) return;
+    const lastVerseNumber = verses[verses.length - 1]?.verse ?? 1;
+    if (noteLinkRangeEndVerse > lastVerseNumber) {
+      setNoteLinkRangeEndVerse(lastVerseNumber);
+    }
+  }, [noteLinkRangeEndVerse, verses]);
+
+  useEffect(() => {
+    if (!activeNotesVerseId) {
+      setNoteLinkVerseIds([]);
+      return;
+    }
+    const currentIndex = verses.findIndex((verse) => verse.id === activeNotesVerseId);
+    if (currentIndex === -1) {
+      setNoteLinkVerseIds([activeNotesVerseId]);
+      return;
+    }
+    const currentVerseNumber = verses[currentIndex]?.verse ?? 1;
+    if (!noteLinkRangeMode) {
+      setNoteLinkVerseIds([activeNotesVerseId]);
+      return;
+    }
+    const endVerseNumber = Math.max(
+      currentVerseNumber,
+      noteLinkRangeEndVerse ?? currentVerseNumber
+    );
+    const endIndex = verses.findIndex((verse) => verse.verse === endVerseNumber);
+    const resolvedEndIndex = Math.max(
+      currentIndex,
+      endIndex === -1 ? currentIndex : endIndex
+    );
+    const nextIds = verses
+      .slice(currentIndex, resolvedEndIndex + 1)
+      .map((verse) => verse.id);
+    setNoteLinkVerseIds(nextIds.length ? nextIds : [activeNotesVerseId]);
+  }, [activeNotesVerseId, noteLinkRangeEndVerse, noteLinkRangeMode, verses]);
+
+  useEffect(() => {
+    if (!activeNotesVerseId || noteLinkRangeEndVerse !== null) return;
+    const currentVerse = verses.find((verse) => verse.id === activeNotesVerseId);
+    if (currentVerse) {
+      setNoteLinkRangeEndVerse(currentVerse.verse);
+      setNoteLinkRangeMode(false);
+    }
+  }, [activeNotesVerseId, noteLinkRangeEndVerse, verses]);
 
   // Load verses + saved highlights/notes
   useEffect(() => {
@@ -745,13 +1154,23 @@ export function BibleReader({
             };
             const loadedNotebooks = parsed.notebooks ?? [];
             const loadedNotes = parsed.notesByNotebook ?? {};
-            const activeId =
-              parsed.activeNotebookId ??
-              (loadedNotebooks[0]?.id ?? null);
-
-            setNotebooks(loadedNotebooks);
-            setNotesByNotebook(loadedNotes);
-            setActiveNotebookId(activeId);
+            if (loadedNotebooks.length === 0) {
+              const fallbackNotebook: Notebook = {
+                id: `notebook-${Date.now()}`,
+                name: "My Notes",
+                createdAt: Date.now(),
+              };
+              setNotebooks([fallbackNotebook]);
+              setNotesByNotebook({ [fallbackNotebook.id]: loadedNotes[fallbackNotebook.id] ?? [] });
+              setActiveNotebookId(fallbackNotebook.id);
+            } else {
+              const activeId =
+                parsed.activeNotebookId ??
+                (loadedNotebooks[0]?.id ?? null);
+              setNotebooks(loadedNotebooks);
+              setNotesByNotebook(loadedNotes);
+              setActiveNotebookId(activeId);
+            }
           } else {
             const defaultNotebook: Notebook = {
               id: `notebook-${Date.now()}`,
@@ -820,9 +1239,17 @@ export function BibleReader({
   }, [activeNotebookId]);
 
   useEffect(() => {
+    const vp = scrollViewportRef.current;
+    if (!vp) return;
+    setInkOverlayScrollTop(vp.scrollTop);
+  }, [activeNotebookId, chapterKey]);
+
+  useEffect(() => {
     if (!activeNotebookId) {
       setInkStrokes([]);
       inkStrokesRef.current = [];
+      setInkTextBoxes([]);
+      inkTextBoxesRef.current = [];
       return;
     }
     try {
@@ -847,6 +1274,38 @@ export function BibleReader({
   }, [activeNotebookId, chapterKey, inkStorageKey]);
 
   useEffect(() => {
+    if (!activeNotebookId) {
+      setInkTexts([]);
+      inkTextsRef.current = [];
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(inkTextStorageKey);
+      if (!raw) {
+        setInkTexts([]);
+        inkTextsRef.current = [];
+        return;
+      }
+      const parsed = JSON.parse(raw) as Record<
+        string,
+        Record<string, InkText[]>
+      >;
+      const next = parsed?.[activeNotebookId]?.[chapterKey] ?? [];
+      setInkTexts(next);
+      inkTextsRef.current = next;
+    } catch (e) {
+      console.warn("Failed to load ink texts", e);
+      setInkTexts([]);
+      inkTextsRef.current = [];
+    }
+  }, [activeNotebookId, chapterKey, inkTextStorageKey]);
+
+  useEffect(() => {
+    setInkTextBoxes([]);
+    inkTextBoxesRef.current = [];
+  }, [activeNotebookId, chapterKey]);
+
+  useEffect(() => {
     if (!activeNotebookId) return;
     try {
       const raw = localStorage.getItem(inkStorageKey);
@@ -867,8 +1326,37 @@ export function BibleReader({
   }, [activeNotebookId, chapterKey, inkStorageKey, inkStrokes]);
 
   useEffect(() => {
+    if (!activeNotebookId) return;
+    try {
+      const raw = localStorage.getItem(inkTextStorageKey);
+      const parsed = raw
+        ? (JSON.parse(raw) as Record<string, Record<string, InkText[]>>)
+        : {};
+      const next = {
+        ...parsed,
+        [activeNotebookId]: {
+          ...(parsed[activeNotebookId] ?? {}),
+          [chapterKey]: inkTexts,
+        },
+      };
+      localStorage.setItem(inkTextStorageKey, JSON.stringify(next));
+    } catch (e) {
+      console.warn("Failed to save ink texts", e);
+    }
+  }, [activeNotebookId, chapterKey, inkTextStorageKey, inkTexts]);
+
+  useEffect(() => {
     resizeInkCanvas();
   }, [resizeInkCanvas]);
+
+  useEffect(() => {
+    if (!inkEnabled) return;
+    const id = window.requestAnimationFrame(() => {
+      resizeInkCanvas();
+      redrawInk();
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [inkEnabled, redrawInk, resizeInkCanvas]);
 
   useEffect(() => {
     const handleResize = () => resizeInkCanvas();
@@ -877,11 +1365,93 @@ export function BibleReader({
   }, [resizeInkCanvas]);
 
   useEffect(() => {
+    const vp = scrollViewportRef.current;
+    if (!vp || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      resizeInkCanvas();
+    });
+    observer.observe(vp);
+    return () => observer.disconnect();
+  }, [resizeInkCanvas]);
+
+  useEffect(() => {
     inkStrokesRef.current = inkStrokes;
     if (!isDrawingRef.current) {
+      if (skipNextInkRedrawRef.current) {
+        skipNextInkRedrawRef.current = false;
+        return;
+      }
       redrawInk();
     }
   }, [inkStrokes, redrawInk]);
+
+  useEffect(() => {
+    inkTextsRef.current = inkTexts;
+    if (!isDrawingRef.current) {
+      redrawInk();
+    }
+  }, [inkTexts, redrawInk]);
+
+  useEffect(() => {
+    inkTextBoxesRef.current = inkTextBoxes;
+    if (!isDrawingRef.current) {
+      redrawInk();
+    }
+  }, [inkTextBoxes, redrawInk]);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const active = textBoxResizeRef.current;
+      if (!active) return;
+      const dx = event.clientX - active.startX;
+      const dy = event.clientY - active.startY;
+      const minWidth = 40;
+      const minHeight = 30;
+      const maxDx = active.startWidth - minWidth;
+      const clampedDx = Math.min(dx, maxDx);
+      updateTextBoxById(active.id, (box) => ({
+        ...box,
+        x: active.startLeft + clampedDx,
+        width: Math.max(minWidth, active.startWidth - clampedDx),
+        height: Math.max(minHeight, active.startHeight + dy),
+      }));
+    };
+
+    const handlePointerUp = () => {
+      if (!textBoxResizeRef.current) return;
+      textBoxResizeRef.current = null;
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [updateTextBoxById]);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const active = notesPanelResizeRef.current;
+      if (!active) return;
+      const dx = active.startX - event.clientX;
+      const nextWidth = Math.max(240, Math.min(720, active.startWidth + dx));
+      setNotesPanelWidth(nextWidth);
+    };
+
+    const handlePointerUp = () => {
+      if (!notesPanelResizeRef.current) return;
+      notesPanelResizeRef.current = null;
+      setIsResizingNotesPanel(false);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, []);
 
   const scrollToVerse = useCallback((verseNumber: number) => {
     if (!verseNumber) return;
@@ -1238,7 +1808,7 @@ export function BibleReader({
     return {
       x: event.clientX - rect.left,
       y: event.clientY - rect.top + vp.scrollTop,
-      pressure: event.pressure,
+      pressure: undefined,
     };
   };
 
@@ -1250,12 +1820,430 @@ export function BibleReader({
     return {
       x: touch.clientX - rect.left,
       y: touch.clientY - rect.top + vp.scrollTop,
-      pressure: touch.force,
+      pressure: undefined,
     };
   };
 
+  const getInkViewportPointFromEvent = (event: PointerEvent) => {
+    const canvas = inkCanvasRef.current;
+    if (!canvas) return null;
+    const rect = inkRectRef.current ?? canvas.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+      pressure: undefined,
+    };
+  };
+
+  const getInkViewportPointFromTouch = (touch: Touch) => {
+    const canvas = inkCanvasRef.current;
+    if (!canvas) return null;
+    const rect = inkRectRef.current ?? canvas.getBoundingClientRect();
+    return {
+      x: touch.clientX - rect.left,
+      y: touch.clientY - rect.top,
+      pressure: undefined,
+    };
+  };
+
+  const getTextBoxPointFromEvent = (event: PointerEvent) => {
+    const area = notesAreaRef.current;
+    if (!area) return null;
+    const rect = area.getBoundingClientRect();
+    if (
+      event.clientX < rect.left ||
+      event.clientX > rect.right ||
+      event.clientY < rect.top ||
+      event.clientY > rect.bottom
+    ) {
+      return null;
+    }
+    return {
+      x: event.clientX - rect.left + area.scrollLeft,
+      y: event.clientY - rect.top + area.scrollTop,
+      pressure: undefined,
+    };
+  };
+
+  const getTextBoxPointFromTouch = (touch: Touch) => {
+    const area = notesAreaRef.current;
+    if (!area) return null;
+    const rect = area.getBoundingClientRect();
+    if (
+      touch.clientX < rect.left ||
+      touch.clientX > rect.right ||
+      touch.clientY < rect.top ||
+      touch.clientY > rect.bottom
+    ) {
+      return null;
+    }
+    return {
+      x: touch.clientX - rect.left + area.scrollLeft,
+      y: touch.clientY - rect.top + area.scrollTop,
+      pressure: undefined,
+    };
+  };
+
+  const getTextBoxPointFromDragEvent = (event: DragEvent<HTMLDivElement>) => {
+    const area = notesAreaRef.current;
+    if (!area) return null;
+    const rect = area.getBoundingClientRect();
+    if (
+      event.clientX < rect.left ||
+      event.clientX > rect.right ||
+      event.clientY < rect.top ||
+      event.clientY > rect.bottom
+    ) {
+      return null;
+    }
+    return {
+      x: event.clientX - rect.left + area.scrollLeft,
+      y: event.clientY - rect.top + area.scrollTop,
+      pressure: undefined,
+    };
+  };
+
+  const getContentPointFromEvent = (
+    event: PointerEvent | React.PointerEvent<HTMLDivElement>
+  ) => {
+    const content = verseContentRef.current;
+    const vp = scrollViewportRef.current;
+    if (!content || !vp) return null;
+    const rect = content.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left + vp.scrollLeft,
+      y: event.clientY - rect.top + vp.scrollTop,
+      pressure: undefined,
+    };
+  };
+
+  const getContentPointFromTouch = (touch: Touch) => {
+    const content = verseContentRef.current;
+    const vp = scrollViewportRef.current;
+    if (!content || !vp) return null;
+    const rect = content.getBoundingClientRect();
+    return {
+      x: touch.clientX - rect.left + vp.scrollLeft,
+      y: touch.clientY - rect.top + vp.scrollTop,
+      pressure: undefined,
+    };
+  };
+
+  const normalizeRect = (start: InkPoint, end: InkPoint) => {
+    const x = Math.min(start.x, end.x);
+    const y = Math.min(start.y, end.y);
+    const width = Math.max(1, Math.abs(end.x - start.x));
+    const height = Math.max(1, Math.abs(end.y - start.y));
+    return { x, y, width, height };
+  };
+
+  const normalizeTextBox = (start: InkPoint, end: InkPoint) => {
+    const x = Math.min(start.x, end.x);
+    const y = Math.min(start.y, end.y);
+    const width = Math.max(1, Math.abs(end.x - start.x));
+    const height = Math.max(1, Math.abs(end.y - start.y));
+    return { x, y, width, height };
+  };
+
+  const handleNotesDragOver = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    },
+    []
+  );
+
+  const addTextBoxFromPayload = useCallback(
+    (rawPayload: string, point?: InkPoint | null) => {
+      const area = notesAreaRef.current;
+      if (!area) return;
+
+      let droppedText = "";
+      let verseId: string | null = null;
+      if (rawPayload) {
+        try {
+          const parsed = JSON.parse(rawPayload) as {
+            text?: string;
+            verseId?: string;
+            words?: { text?: string; verseId?: string }[];
+          };
+          if (parsed.words?.length) {
+            droppedText = parsed.words
+              .map((word) => word.text?.trim())
+              .filter(Boolean)
+              .join(" ");
+            verseId = parsed.verseId ?? parsed.words[0]?.verseId ?? null;
+          } else {
+            droppedText = parsed.text?.trim() ?? "";
+            verseId = parsed.verseId ?? null;
+          }
+        } catch {
+          droppedText = "";
+        }
+      }
+
+      if (!droppedText) {
+        return;
+      }
+
+      const targetVerseId = verseId ?? activeNotesVerseId;
+      if (!targetVerseId) return;
+
+      const boxWidth = Math.max(160, Math.min(320, droppedText.length * 10));
+      const boxHeight = 72;
+      const maxX = Math.max(0, area.scrollWidth - boxWidth);
+      const maxY = Math.max(0, area.scrollHeight - boxHeight);
+      const fallbackPoint = {
+        x: area.scrollLeft + 24,
+        y: area.scrollTop + 24,
+        pressure: undefined,
+      };
+      const resolvedPoint = point ?? fallbackPoint;
+      const x = Math.min(Math.max(0, resolvedPoint.x), maxX);
+      const y = Math.min(Math.max(0, resolvedPoint.y), maxY);
+
+      const box: InkTextBox = {
+        id: `ink-textbox-${Date.now()}`,
+        verseIds: [targetVerseId],
+        noteMode: noteLinkRangeMode ? "range" : "single",
+        x,
+        y,
+        width: boxWidth,
+        height: boxHeight,
+        color: inkColor,
+        borderWidth: Math.max(1, penSize),
+        text: droppedText,
+        isEditing: true,
+      };
+
+      inkTextBoxesRef.current = [...inkTextBoxesRef.current, box];
+      setInkTextBoxes(inkTextBoxesRef.current);
+      redrawInk();
+
+      if (targetVerseId !== activeNotesVerseId) {
+        setActiveNotesVerseId(targetVerseId);
+      }
+    },
+    [activeNotesVerseId, inkColor, penSize, redrawInk]
+  );
+
+  const handleNotesDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const area = notesAreaRef.current;
+      if (!area) return;
+
+      const point = getTextBoxPointFromDragEvent(event);
+      if (!point) return;
+      addTextBoxFromPayload(
+        event.dataTransfer.getData("application/x-bible-word"),
+        point
+      );
+    },
+    [addTextBoxFromPayload, getTextBoxPointFromDragEvent]
+  );
+
+  const handleLassoPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (inkTool !== "lasso") return;
+      if (event.button !== 0) return;
+      const target = event.target as HTMLElement;
+      if (target.closest("[data-lasso-control]")) return;
+      const point = getContentPointFromEvent(event);
+      if (!point) return;
+      event.preventDefault();
+      lassoStartRef.current = point;
+      lassoEndRef.current = point;
+      setLassoRect({ x: point.x, y: point.y, width: 1, height: 1 });
+      setLassoSelectedWords([]);
+    },
+    [getContentPointFromEvent, inkTool]
+  );
+
+  const handleLassoPointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!lassoStartRef.current) return;
+      const point = getContentPointFromEvent(event);
+      if (!point) return;
+      lassoEndRef.current = point;
+      const rect = normalizeRect(lassoStartRef.current, point);
+      setLassoRect(rect);
+    },
+    [getContentPointFromEvent, normalizeRect]
+  );
+
+  const finalizeLassoSelection = useCallback(() => {
+    const start = lassoStartRef.current;
+    const end = lassoEndRef.current;
+    const content = verseContentRef.current;
+    const vp = scrollViewportRef.current;
+    lassoStartRef.current = null;
+    lassoEndRef.current = null;
+
+    if (!start || !end || !content || !vp) {
+      setLassoRect(null);
+      return;
+    }
+
+    const rect = normalizeRect(start, end);
+    if (rect.width < 6 && rect.height < 6) {
+      setLassoRect(null);
+      setLassoSelectedWords([]);
+      return;
+    }
+
+    const contentRect = content.getBoundingClientRect();
+    const words = Array.from(
+      content.querySelectorAll<HTMLElement>("[data-lasso-word]")
+    );
+    const selected: LassoWord[] = [];
+    for (const el of words) {
+      const wordRect = el.getBoundingClientRect();
+      const wordX = wordRect.left - contentRect.left + vp.scrollLeft;
+      const wordY = wordRect.top - contentRect.top + vp.scrollTop;
+      const intersects =
+        wordX < rect.x + rect.width &&
+        wordX + wordRect.width > rect.x &&
+        wordY < rect.y + rect.height &&
+        wordY + wordRect.height > rect.y;
+      if (!intersects) continue;
+      const id = el.dataset.wordId;
+      const verseId = el.dataset.verseId;
+      const text = el.dataset.wordText;
+      const kind = el.dataset.wordKind as "english" | "greek" | undefined;
+      if (!id || !verseId || !text || !kind) continue;
+      selected.push({ id, verseId, text, kind });
+    }
+    setLassoSelectedWords(selected);
+    setLassoRect(null);
+  }, [normalizeRect]);
+
+  const handleLassoPointerUp = useCallback(() => {
+    finalizeLassoSelection();
+  }, [finalizeLassoSelection]);
+
+  const handleLassoTouchStart = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      if (inkTool !== "lasso") return;
+      const target = event.target as HTMLElement;
+      if (target.closest("[data-lasso-control]")) return;
+      const touch = event.touches[0];
+      if (!touch) return;
+      const point = getContentPointFromTouch(touch);
+      if (!point) return;
+      if (event.cancelable) event.preventDefault();
+      lassoStartRef.current = point;
+      lassoEndRef.current = point;
+      setLassoRect({ x: point.x, y: point.y, width: 1, height: 1 });
+      setLassoSelectedWords([]);
+    },
+    [getContentPointFromTouch, inkTool]
+  );
+
+  const handleLassoTouchMove = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      if (!lassoStartRef.current) return;
+      const touch = event.touches[0];
+      if (!touch) return;
+      const point = getContentPointFromTouch(touch);
+      if (!point) return;
+      lassoEndRef.current = point;
+      const rect = normalizeRect(lassoStartRef.current, point);
+      setLassoRect(rect);
+      if (event.cancelable) event.preventDefault();
+    },
+    [getContentPointFromTouch, normalizeRect]
+  );
+
+  const handleLassoTouchEnd = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      if (!lassoStartRef.current) return;
+      const touch = event.changedTouches[0];
+      if (touch) {
+        const point = getContentPointFromTouch(touch);
+        if (point) {
+          lassoEndRef.current = point;
+        }
+      }
+      finalizeLassoSelection();
+      if (event.cancelable) event.preventDefault();
+    },
+    [finalizeLassoSelection, getContentPointFromTouch]
+  );
+
+
+
+  const startTextBox = (point: InkPoint) => {
+    const linkIds =
+      noteLinkVerseIds.length > 0
+        ? noteLinkVerseIds
+        : activeNotesVerseId
+          ? [activeNotesVerseId]
+          : [];
+    if (!linkIds.length) {
+      return;
+    }
+    textBoxStartRef.current = point;
+    const box: InkTextBox = {
+      id: `ink-textbox-${Date.now()}`,
+      verseIds: linkIds,
+      noteMode: noteLinkRangeMode ? "range" : "single",
+      x: point.x,
+      y: point.y,
+      width: 1,
+      height: 1,
+      color: inkColor,
+      borderWidth: Math.max(1, penSize),
+      text: "",
+      isEditing: true,
+    };
+    activeTextBoxRef.current = box;
+    isDrawingRef.current = true;
+    inkTextBoxesRef.current = [...inkTextBoxesRef.current, box];
+    setInkTextBoxes(inkTextBoxesRef.current);
+    redrawInk();
+  };
+
+  const updateTextBox = (point: InkPoint) => {
+    const start = textBoxStartRef.current;
+    const active = activeTextBoxRef.current;
+    if (!start || !active) return;
+    const { x, y, width, height } = normalizeTextBox(start, point);
+    activeTextBoxRef.current = {
+      ...active,
+      x,
+      y,
+      width,
+      height,
+    };
+    const boxes = inkTextBoxesRef.current.slice(0, -1);
+    inkTextBoxesRef.current = [...boxes, activeTextBoxRef.current];
+    setInkTextBoxes(inkTextBoxesRef.current);
+    redrawInk();
+  };
+
+  const endTextBox = () => {
+    const active = activeTextBoxRef.current;
+    if (!active) return;
+    if (active.width < 6 || active.height < 6) {
+      inkTextBoxesRef.current = inkTextBoxesRef.current.filter(
+        (box) => box.id !== active.id
+      );
+      setInkTextBoxes(inkTextBoxesRef.current);
+    }
+    activeTextBoxRef.current = null;
+    textBoxStartRef.current = null;
+    isDrawingRef.current = false;
+    redrawInk();
+    setInkTool("select");
+    setShowInkSettings(false);
+  };
+
   const startInkStroke = (point: InkPoint) => {
-    const settings = inkToolSettings[inkTool];
+    const settings =
+      inkTool === "pen"
+        ? { baseWidth: penSize, alpha: 1 }
+        : { baseWidth: highlighterSize, alpha: highlighterOpacity };
     const stroke: InkStroke = {
       id: `ink-${Date.now()}`,
       tool: inkTool,
@@ -1266,9 +2254,62 @@ export function BibleReader({
     };
     activeStrokeRef.current = stroke;
     isDrawingRef.current = true;
+    lastInkPointTimeRef.current = performance.now();
     inkStrokesRef.current = [...inkStrokesRef.current, stroke];
     setInkStrokes(inkStrokesRef.current);
   };
+
+  const setInkScrollLock = (locked: boolean) => {
+    if (typeof document !== "undefined") {
+      document.documentElement.style.overflow = locked ? "hidden" : "auto";
+      document.documentElement.style.touchAction = locked ? "none" : "auto";
+      document.body.style.overflow = locked ? "hidden" : "auto";
+      document.body.style.touchAction = locked ? "none" : "auto";
+    }
+    const vp = scrollViewportRef.current;
+    if (vp) {
+      vp.style.overflowY = locked ? "hidden" : "auto";
+      vp.style.touchAction = locked ? "none" : "pan-y";
+    }
+  };
+
+  useEffect(() => {
+    if (!inkEnabled || inkTool === "select") {
+      setInkScrollLock(false);
+      setShowInkSettings(false);
+    }
+  }, [inkEnabled, inkTool]);
+
+  useEffect(() => {
+    if (!inkEnabled) return;
+    if (inkTool === "lasso") {
+      setInkScrollLock(true);
+    } else {
+      setInkScrollLock(false);
+    }
+  }, [inkEnabled, inkTool]);
+
+  useEffect(() => {
+    if (!inkEnabled || inkTool !== "eraser") {
+      hideEraserCursor();
+    }
+  }, [hideEraserCursor, inkEnabled, inkTool]);
+
+  useEffect(() => {
+    if (!bookPopoverOpen) return;
+    setBookPickerBook(book);
+    setBookPickerChapter(chapter);
+  }, [bookPopoverOpen, book, chapter]);
+
+  useEffect(() => {
+    setInkScrollLock(false);
+  }, []);
+
+  useEffect(() => {
+    if (!inkEnabled) {
+      onToggleInkEnabled(true);
+    }
+  }, [inkEnabled, onToggleInkEnabled]);
 
   const appendInkPoint = (point: InkPoint) => {
     const strokes = inkStrokesRef.current;
@@ -1276,14 +2317,14 @@ export function BibleReader({
     const lastIndex = strokes.length - 1;
     const last = strokes[lastIndex];
     if (activeStrokeRef.current?.id !== last.id) return;
-    const updated = {
-      ...last,
-      points: [...last.points, point],
-    };
-    strokes[lastIndex] = updated;
+    const prev = last.points[last.points.length - 1];
+    if (prev) {
+      lastInkPointTimeRef.current = performance.now();
+    }
+    last.points.push(point);
     inkStrokesRef.current = strokes;
-    activeStrokeRef.current = updated;
-    drawStrokeSegment(updated);
+    activeStrokeRef.current = last;
+    drawStrokeSegment(last);
     if (rafRef.current === null) {
       rafRef.current = window.requestAnimationFrame(() => {
         rafRef.current = null;
@@ -1291,9 +2332,23 @@ export function BibleReader({
     }
   };
 
+  const appendInkPointsFromPointer = (event: PointerEvent) => {
+    const point = getInkPointFromEvent(event);
+    if (point) appendInkPoint(point);
+  };
+
   const endInkStroke = () => {
+    const stroke = activeStrokeRef.current;
+    if (stroke) {
+      if (stroke.points.length === 1) {
+        const base = stroke.points[0];
+        stroke.points.push({ x: base.x + 0.5, y: base.y + 0.5 });
+      }
+      redrawInk();
+    }
     isDrawingRef.current = false;
     activeStrokeRef.current = null;
+    skipNextInkRedrawRef.current = true;
     setInkStrokes([...inkStrokesRef.current]);
   };
 
@@ -1309,15 +2364,22 @@ export function BibleReader({
     return hasPressure || narrowTip;
   };
 
+  const isTextBoxTarget = (target: EventTarget | null) => {
+    if (!(target instanceof Element)) return false;
+    return Boolean(target.closest("[data-ink-textbox]"));
+  };
+
   const handleInkPointerDown = (event: PointerEvent) => {
     if (!inkEnabled) return;
-    if (!isInkPointerEvent(event)) return;
+    if (inkTool === "select" || inkTool === "lasso") return;
+    if (inkTool !== "textbox" && !isInkPointerEvent(event)) return;
+    if (inkTool !== "eraser" && isTextBoxTarget(event.target)) return;
     event.preventDefault();
+    event.stopPropagation();
     pointerInkActiveRef.current = true;
+    setInkScrollLock(true);
     const vp = scrollViewportRef.current;
     if (vp) {
-      vp.style.touchAction = "none";
-      vp.style.overflowY = "hidden";
       try {
         vp.setPointerCapture(event.pointerId);
       } catch {
@@ -1326,29 +2388,58 @@ export function BibleReader({
     }
     const canvas = inkCanvasRef.current;
     inkRectRef.current = canvas ? canvas.getBoundingClientRect() : null;
-    const point = getInkPointFromEvent(event);
+    const point =
+      inkTool === "textbox"
+        ? getTextBoxPointFromEvent(event)
+        : getInkPointFromEvent(event);
     if (!point) return;
+    if (inkTool === "textbox") {
+      startTextBox(point);
+      return;
+    }
+    if (inkTool === "eraser") {
+      isDrawingRef.current = true;
+      const textBoxPoint = getTextBoxPointFromEvent(event);
+      eraseAtPoint(point, textBoxPoint);
+      const cursorPoint = getInkViewportPointFromEvent(event);
+      if (cursorPoint) updateEraserCursor(cursorPoint);
+      return;
+    }
     startInkStroke(point);
   };
 
   const handleInkPointerMove = (event: PointerEvent) => {
     if (!inkEnabled || !isDrawingRef.current) return;
-    if (!isInkPointerEvent(event)) return;
+    if (inkTool === "select" || inkTool === "lasso") return;
+    if (inkTool !== "textbox" && !isInkPointerEvent(event)) return;
     event.preventDefault();
-    const point = getInkPointFromEvent(event);
-    if (!point) return;
-    appendInkPoint(point);
+    event.stopPropagation();
+    if (inkTool === "textbox" && activeTextBoxRef.current) {
+      const point = getTextBoxPointFromEvent(event);
+      if (point) updateTextBox(point);
+      return;
+    }
+    if (inkTool === "eraser") {
+      const point = getInkPointFromEvent(event);
+      const textBoxPoint = getTextBoxPointFromEvent(event);
+      if (point || textBoxPoint) eraseAtPoint(point, textBoxPoint);
+      const cursorPoint = getInkViewportPointFromEvent(event);
+      if (cursorPoint) updateEraserCursor(cursorPoint);
+      return;
+    }
+    appendInkPointsFromPointer(event);
   };
 
   const handleInkPointerUp = (event: PointerEvent) => {
     if (!inkEnabled) return;
-    if (!isInkPointerEvent(event)) return;
+    if (inkTool === "select" || inkTool === "lasso") return;
+    if (inkTool !== "textbox" && !isInkPointerEvent(event)) return;
     event.preventDefault();
+    event.stopPropagation();
     pointerInkActiveRef.current = false;
+    setInkScrollLock(false);
     const vp = scrollViewportRef.current;
     if (vp) {
-      vp.style.touchAction = "pan-y";
-      vp.style.overflowY = "auto";
       try {
         vp.releasePointerCapture(event.pointerId);
       } catch {
@@ -1356,19 +2447,51 @@ export function BibleReader({
       }
     }
     inkRectRef.current = null;
+    if (inkTool === "textbox" && activeTextBoxRef.current) {
+      endTextBox();
+      return;
+    }
+    if (inkTool === "eraser") {
+      isDrawingRef.current = false;
+      activeStrokeRef.current = null;
+      hideEraserCursor();
+      return;
+    }
     endInkStroke();
   };
 
-  const isStylusTouchEvent = (event: TouchEvent) => {
-    return Array.from(event.touches).some((touch) => {
+  const getStylusTouchFromEvent = (event: TouchEvent) => {
+    for (const touch of Array.from(event.changedTouches)) {
       const anyTouch = touch as Touch & { touchType?: string };
-      if (anyTouch.touchType === "stylus") return true;
-      const force = typeof touch.force === "number" ? touch.force : 0;
+      if (anyTouch.touchType === "stylus") return touch;
       const radiusX = typeof touch.radiusX === "number" ? touch.radiusX : 0;
       const radiusY = typeof touch.radiusY === "number" ? touch.radiusY : 0;
       const radius = Math.max(radiusX || 0, radiusY || 0);
-      return force > 0.1 && radius > 0 && radius <= 5;
-    });
+      if (radius > 0 && radius <= 6) return touch;
+    }
+    for (const touch of Array.from(event.touches)) {
+      const anyTouch = touch as Touch & { touchType?: string };
+      if (anyTouch.touchType === "stylus") return touch;
+      const radiusX = typeof touch.radiusX === "number" ? touch.radiusX : 0;
+      const radiusY = typeof touch.radiusY === "number" ? touch.radiusY : 0;
+      const radius = Math.max(radiusX || 0, radiusY || 0);
+      if (radius > 0 && radius <= 6) return touch;
+    }
+    return null;
+  };
+
+  const isStylusTouchEvent = (event: TouchEvent) =>
+    Boolean(getStylusTouchFromEvent(event));
+
+  const getTouchById = (event: TouchEvent, id: number | null) => {
+    if (id === null) return null;
+    for (const touch of Array.from(event.touches)) {
+      if (touch.identifier === id) return touch;
+    }
+    for (const touch of Array.from(event.changedTouches)) {
+      if (touch.identifier === id) return touch;
+    }
+    return null;
   };
 
   useEffect(() => {
@@ -1381,43 +2504,142 @@ export function BibleReader({
 
     const onTouchStart = (event: TouchEvent) => {
       if (!inkEnabled) return;
+      if (inkTool === "select" || inkTool === "lasso") return;
       if (pointerInkActiveRef.current) return;
-      if (!isStylusTouchEvent(event)) return;
+      if (inkTool !== "eraser" && isTextBoxTarget(event.target)) return;
+      if (inkTool !== "textbox" && !isStylusTouchEvent(event)) return;
       stylusTouchActiveRef.current = true;
       touchInkActiveRef.current = true;
-      vp.style.touchAction = "none";
-      vp.style.overflowY = "hidden";
+      const stylusTouch =
+        inkTool === "textbox" ? event.changedTouches[0] : getStylusTouchFromEvent(event);
+      stylusTouchIdRef.current = stylusTouch ? stylusTouch.identifier : null;
+      setInkScrollLock(true);
       const canvas = inkCanvasRef.current;
       inkRectRef.current = canvas ? canvas.getBoundingClientRect() : null;
-      const touch = event.touches[0];
-      const point = touch ? getInkPointFromTouch(touch) : null;
+      const touch = stylusTouch ?? getTouchById(event, stylusTouchIdRef.current);
+      const point = touch
+        ? inkTool === "textbox"
+          ? getTextBoxPointFromTouch(touch)
+          : getInkPointFromTouch(touch)
+        : null;
       if (point) {
-        startInkStroke(point);
+        if (inkTool === "textbox") {
+          startTextBox(point);
+        } else if (inkTool === "eraser") {
+          isDrawingRef.current = true;
+          const textBoxPoint = touch ? getTextBoxPointFromTouch(touch) : null;
+          eraseAtPoint(point, textBoxPoint);
+          const cursorPoint = touch ? getInkViewportPointFromTouch(touch) : null;
+          if (cursorPoint) updateEraserCursor(cursorPoint);
+        } else {
+          startInkStroke(point);
+        }
       }
       event.preventDefault();
+      event.stopPropagation();
     };
 
     const onTouchMove = (event: TouchEvent) => {
       if (!inkEnabled) return;
+      if (inkTool === "select" || inkTool === "lasso") return;
       if (pointerInkActiveRef.current) return;
-      if (!stylusTouchActiveRef.current && !isStylusTouchEvent(event)) return;
-      if (!touchInkActiveRef.current) return;
-      const touch = event.touches[0];
-      const point = touch ? getInkPointFromTouch(touch) : null;
-      if (point) {
-        appendInkPoint(point);
+      const isStylus =
+        inkTool === "textbox"
+          ? true
+          : stylusTouchActiveRef.current || isStylusTouchEvent(event);
+      if (isStylus && touchInkActiveRef.current) {
+        const touch =
+          getTouchById(event, stylusTouchIdRef.current) ??
+          (inkTool === "textbox" ? event.changedTouches[0] : getStylusTouchFromEvent(event));
+        const point = touch
+          ? inkTool === "textbox"
+            ? getTextBoxPointFromTouch(touch)
+            : getInkPointFromTouch(touch)
+          : null;
+        if (point) {
+          if (inkTool === "textbox" && activeTextBoxRef.current) {
+            updateTextBox(point);
+          } else if (inkTool === "eraser") {
+            const textBoxPoint = touch ? getTextBoxPointFromTouch(touch) : null;
+            eraseAtPoint(point, textBoxPoint);
+            const cursorPoint = touch ? getInkViewportPointFromTouch(touch) : null;
+            if (cursorPoint) updateEraserCursor(cursorPoint);
+          } else {
+            appendInkPoint(point);
+          }
+        }
+        event.preventDefault();
+        event.stopPropagation();
       }
-      event.preventDefault();
     };
 
     const onTouchEnd = () => {
+      if (inkTool === "select" || inkTool === "lasso") return;
       if (!stylusTouchActiveRef.current && !touchInkActiveRef.current) return;
       stylusTouchActiveRef.current = false;
       touchInkActiveRef.current = false;
-      vp.style.touchAction = "pan-y";
-      vp.style.overflowY = "auto";
+      stylusTouchIdRef.current = null;
+      setInkScrollLock(false);
       inkRectRef.current = null;
-      endInkStroke();
+      if (inkTool === "textbox" && activeTextBoxRef.current) {
+        endTextBox();
+      } else if (inkTool === "eraser") {
+        isDrawingRef.current = false;
+        activeStrokeRef.current = null;
+        hideEraserCursor();
+      } else {
+        endInkStroke();
+      }
+    };
+
+    const onWindowTouchMove = (event: TouchEvent) => {
+      if (!inkEnabled) return;
+      if (inkTool === "select" || inkTool === "lasso") return;
+      if (!touchInkActiveRef.current && !pointerInkActiveRef.current) return;
+      if (touchInkActiveRef.current) {
+        const touch =
+          getTouchById(event, stylusTouchIdRef.current) ??
+          (inkTool === "textbox" ? event.changedTouches[0] : getStylusTouchFromEvent(event));
+        const point = touch
+          ? inkTool === "textbox"
+            ? getTextBoxPointFromTouch(touch)
+            : getInkPointFromTouch(touch)
+          : null;
+        if (point) {
+          if (inkTool === "textbox" && activeTextBoxRef.current) {
+            updateTextBox(point);
+          } else if (inkTool === "eraser") {
+            const textBoxPoint = touch ? getTextBoxPointFromTouch(touch) : null;
+            eraseAtPoint(point, textBoxPoint);
+            const cursorPoint = touch ? getInkViewportPointFromTouch(touch) : null;
+            if (cursorPoint) updateEraserCursor(cursorPoint);
+          } else {
+            appendInkPoint(point);
+          }
+        }
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    const onWindowTouchEnd = () => {
+      if (!inkEnabled) return;
+      if (inkTool === "select" || inkTool === "lasso") return;
+      if (!touchInkActiveRef.current) return;
+      stylusTouchActiveRef.current = false;
+      touchInkActiveRef.current = false;
+      stylusTouchIdRef.current = null;
+      setInkScrollLock(false);
+      inkRectRef.current = null;
+      if (inkTool === "textbox" && activeTextBoxRef.current) {
+        endTextBox();
+      } else if (inkTool === "eraser") {
+        isDrawingRef.current = false;
+        activeStrokeRef.current = null;
+        hideEraserCursor();
+      } else {
+        endInkStroke();
+      }
     };
 
     vp.addEventListener("pointerdown", onPointerDown, { passive: false });
@@ -1428,6 +2650,9 @@ export function BibleReader({
     vp.addEventListener("touchcancel", onTouchEnd, { passive: true });
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerUp);
+    window.addEventListener("touchmove", onWindowTouchMove, { passive: false });
+    window.addEventListener("touchend", onWindowTouchEnd, { passive: true });
+    window.addEventListener("touchcancel", onWindowTouchEnd, { passive: true });
 
     return () => {
       vp.removeEventListener("pointerdown", onPointerDown);
@@ -1438,14 +2663,33 @@ export function BibleReader({
       vp.removeEventListener("touchcancel", onTouchEnd);
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
+      window.removeEventListener("touchmove", onWindowTouchMove);
+      window.removeEventListener("touchend", onWindowTouchEnd);
+      window.removeEventListener("touchcancel", onWindowTouchEnd);
     };
   }, [handleInkPointerDown, handleInkPointerMove, handleInkPointerUp, inkEnabled]);
 
+
   useEffect(() => {
-    const vp = scrollViewportRef.current;
-    if (!vp) return;
-    vp.style.touchAction = "pan-y";
-    vp.style.overflowY = "auto";
+    if (typeof document === "undefined") return;
+    const bodyStyle = document.body.style;
+    const prevUserSelect = bodyStyle.userSelect;
+    const prevWebkitUserSelect = (bodyStyle as CSSStyleDeclaration & {
+      WebkitUserSelect?: string;
+    }).WebkitUserSelect;
+    if (inkEnabled) {
+      bodyStyle.userSelect = "none";
+      (bodyStyle as CSSStyleDeclaration & { WebkitUserSelect?: string }).WebkitUserSelect = "none";
+    } else {
+      bodyStyle.userSelect = prevUserSelect;
+      (bodyStyle as CSSStyleDeclaration & { WebkitUserSelect?: string }).WebkitUserSelect =
+        prevWebkitUserSelect;
+    }
+    return () => {
+      bodyStyle.userSelect = prevUserSelect;
+      (bodyStyle as CSSStyleDeclaration & { WebkitUserSelect?: string }).WebkitUserSelect =
+        prevWebkitUserSelect;
+    };
   }, [inkEnabled]);
 
   // 🔍 Scroll to a verse when you click an occurrence
@@ -1733,6 +2977,179 @@ export function BibleReader({
   const panelVerseRef = panelVerse
     ? `${panelVerse.book} ${panelVerse.chapter}:${panelVerse.verse}`
     : "";
+  const noteLinkStartVerseNumber = useMemo(() => {
+    if (!activeNotesVerseId) return 1;
+    const current = verses.find((verse) => verse.id === activeNotesVerseId);
+    return current?.verse ?? 1;
+  }, [activeNotesVerseId, verses]);
+  const noteLinkRangeDisplay = useMemo(() => {
+    if (!activeNotesVerseId) return "Link range";
+    const startVerse = verses.find((verse) => verse.id === activeNotesVerseId);
+    if (!startVerse) return "Link range";
+    const endVerseNumber = noteLinkRangeEndVerse ?? startVerse.verse;
+    const inRange = noteLinkRangeMode && endVerseNumber >= startVerse.verse;
+    const resolvedEndVerse = Math.max(startVerse.verse, endVerseNumber);
+    return inRange
+      ? `${startVerse.book} ${startVerse.chapter}:${startVerse.verse}-${resolvedEndVerse}`
+      : `${startVerse.book} ${startVerse.chapter}:${startVerse.verse}`;
+  }, [activeNotesVerseId, noteLinkRangeEndVerse, noteLinkRangeMode, verses]);
+  const noteLinkRangeOptions = useMemo(() => {
+    if (!activeNotesVerseId) return [];
+    const currentIndex = verses.findIndex(
+      (verse) => verse.id === activeNotesVerseId
+    );
+    if (currentIndex === -1) return [];
+    const startVerse = verses[currentIndex];
+    if (!startVerse) return [];
+    return verses.slice(currentIndex).map((verse) => ({
+      value: verse.verse,
+      label: `${verse.verse}`,
+    }));
+  }, [activeNotesVerseId, verses]);
+  const firstNewTestamentIndex = useMemo(
+    () => bibleBooks.findIndex((entry) => entry.name === "Matthew"),
+    []
+  );
+  const oldTestamentBooks =
+    firstNewTestamentIndex > 0
+      ? bibleBooks.slice(0, firstNewTestamentIndex)
+      : bibleBooks;
+  const newTestamentBooks =
+    firstNewTestamentIndex > 0 ? bibleBooks.slice(firstNewTestamentIndex) : [];
+  const bookPickerMeta = useMemo(
+    () => bibleBooks.find((entry) => entry.name === bookPickerBook) ?? null,
+    [bookPickerBook]
+  );
+  const bookPickerChapterCount = bookPickerMeta?.chapters ?? 1;
+  const bookPickerChapterOptions = useMemo(
+    () =>
+      Array.from({ length: bookPickerChapterCount }, (_, idx) => idx + 1),
+    [bookPickerChapterCount]
+  );
+  const handleBookPickerBookChange = (nextBook: string) => {
+    setBookPickerBook(nextBook);
+    const nextMeta = bibleBooks.find((entry) => entry.name === nextBook);
+    const maxChapters = nextMeta?.chapters ?? 1;
+    setBookPickerChapter((prev) => Math.min(prev, maxChapters));
+  };
+  const currentBookIndex = useMemo(
+    () => bibleBooks.findIndex((entry) => entry.name === book),
+    [book]
+  );
+  const currentBookMeta = currentBookIndex >= 0 ? bibleBooks[currentBookIndex] : null;
+  const canGoPrevChapter = Boolean(onNavigate) && (chapter > 1 || currentBookIndex > 0);
+  const canGoNextChapter = Boolean(onNavigate) && Boolean(
+    currentBookMeta && (chapter < currentBookMeta.chapters || currentBookIndex < bibleBooks.length - 1)
+  );
+  const handlePrevChapter = () => {
+    if (!onNavigate) return;
+    if (chapter > 1) {
+      onNavigate(book, chapter - 1);
+      return;
+    }
+    if (currentBookIndex > 0) {
+      const prevBook = bibleBooks[currentBookIndex - 1];
+      onNavigate(prevBook.name, prevBook.chapters);
+    }
+  };
+  const handleNextChapter = () => {
+    if (!onNavigate || !currentBookMeta) return;
+    if (chapter < currentBookMeta.chapters) {
+      onNavigate(book, chapter + 1);
+      return;
+    }
+    if (currentBookIndex < bibleBooks.length - 1) {
+      const nextBook = bibleBooks[currentBookIndex + 1];
+      onNavigate(nextBook.name, 1);
+    }
+  };
+  const visibleInkTextBoxes = useMemo(() => {
+    if (!activeNotesVerseId) return [];
+    return inkTextBoxes.filter((box) => {
+      const mode = box.noteMode ?? "single";
+      if (noteLinkRangeMode && mode !== "range") return false;
+      if (!noteLinkRangeMode && mode !== "single") return false;
+      return box.verseIds.includes(activeNotesVerseId);
+    });
+  }, [activeNotesVerseId, inkTextBoxes, noteLinkRangeMode]);
+  const notesScrollHeight = useMemo(() => {
+    if (!visibleInkTextBoxes.length) return 1;
+    return (
+      Math.max(
+        ...visibleInkTextBoxes.map((box) => box.y + box.height + 24)
+      ) || 1
+    );
+  }, [visibleInkTextBoxes]);
+  const lassoSelectedWordIds = useMemo(() => {
+    return new Set(lassoSelectedWords.map((word) => word.id));
+  }, [lassoSelectedWords]);
+  const lassoSelectedPayload = useMemo(() => {
+    if (!lassoSelectedWords.length) return null;
+    const text = lassoSelectedWords.map((word) => word.text).join(" ");
+    const verseId = lassoSelectedWords[0]?.verseId ?? null;
+    return { text, verseId, words: lassoSelectedWords };
+  }, [lassoSelectedWords]);
+
+  const handleLassoDragStart = useCallback(
+    (event: React.DragEvent<HTMLButtonElement>) => {
+      if (!lassoSelectedPayload) return;
+      event.dataTransfer.setData(
+        "application/x-bible-word",
+        JSON.stringify(lassoSelectedPayload)
+      );
+      event.dataTransfer.setData("text/plain", lassoSelectedPayload.text);
+      event.dataTransfer.effectAllowed = "copy";
+    },
+    [lassoSelectedPayload]
+  );
+
+  const handleLassoAddToNotes = useCallback(() => {
+    if (!lassoSelectedPayload) return;
+    addTextBoxFromPayload(JSON.stringify(lassoSelectedPayload), null);
+  }, [addTextBoxFromPayload, lassoSelectedPayload]);
+
+  useEffect(() => {
+    const content = verseContentRef.current;
+    const vp = scrollViewportRef.current;
+    if (!content || !vp || !lassoSelectedWords.length) {
+      setLassoSelectionBounds(null);
+      return;
+    }
+    const contentRect = content.getBoundingClientRect();
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    lassoSelectedWords.forEach((word) => {
+      const el = content.querySelector<HTMLElement>(
+        `[data-word-id="${word.id}"]`
+      );
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const x = rect.left - contentRect.left + vp.scrollLeft;
+      const y = rect.top - contentRect.top + vp.scrollTop;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x + rect.width);
+      maxY = Math.max(maxY, y + rect.height);
+    });
+    if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
+      setLassoSelectionBounds(null);
+      return;
+    }
+    setLassoSelectionBounds({
+      x: minX,
+      y: minY,
+      width: Math.max(1, maxX - minX),
+      height: Math.max(1, maxY - minY),
+    });
+  }, [lassoSelectedWords]);
+
+  useEffect(() => {
+    if (inkTool !== "lasso" && lassoSelectedWords.length) {
+      setLassoSelectedWords([]);
+    }
+  }, [inkTool, lassoSelectedWords.length]);
 
   const getVerseNoteRef = (note: RangeNote) => {
     if (!panelVerse) return "";
@@ -1752,181 +3169,40 @@ export function BibleReader({
     (!!addingNote && addingNote.verseId === panelVerseId);
 
   return (
-    <div className="h-full min-h-0 flex flex-col">
-      {/* HEADER */}
-      <div
-        className={`border-b px-6 transition-all ${
-          hasSelectedStrong ? "py-4 space-y-4" : "py-3 space-y-2"
-        }`}
-      >
-        {/* Title + Search row */}
-        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-serif font-semibold">
-              {book} {chapter}
-            </h1>
-            <p className="text-xs md:text-sm text-muted-foreground mt-1">
-              {selectedTranslation}
-            </p>
-          </div>
-
-          {/* Search bar (future: book/verse + word/Strong’s search) */}
-          <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center md:justify-end">
-            {showNotes && (
-              <div className="flex items-center gap-2">
-                <select
-                  className="min-w-[180px] rounded-md border border-border bg-background px-2 py-1 text-xs md:text-sm"
-                  value={activeNotebookId ?? ""}
-                  onChange={(e) => setActiveNotebookId(e.target.value)}
-                >
-                  {notebooks.length === 0 && (
-                    <option value="" disabled>
-                      No notebooks
-                    </option>
-                  )}
-                  {notebooks.map((notebook) => (
-                    <option key={notebook.id} value={notebook.id}>
-                      {notebook.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="text-xs md:text-sm px-2 py-1 rounded-md border border-border hover:border-primary/60 hover:bg-accent/40 transition-colors"
-                  onClick={handleRenameNotebook}
-                  disabled={!activeNotebookId}
-                >
-                  Rename
-                </button>
-                <button
-                  type="button"
-                  className="text-xs md:text-sm px-2 py-1 rounded-md border border-border hover:border-primary/60 hover:bg-accent/40 transition-colors"
-                  onClick={handleCreateNotebook}
-                >
-                  New
-                </button>
-              </div>
-            )}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className={`text-xs md:text-sm px-2 py-1 rounded-md border transition-colors ${
-                  inkEnabled
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border hover:border-primary/60 hover:bg-accent/40"
-                }`}
-                onClick={() => onToggleInkEnabled(!inkEnabled)}
-              >
-                Ink {inkEnabled ? "On" : "Off"}
-              </button>
-              {inkEnabled && (
-                <>
-                  <button
-                    type="button"
-                    className={`text-xs md:text-sm px-2 py-1 rounded-md border transition-colors ${
-                      inkTool === "pen"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border hover:border-primary/60 hover:bg-accent/40"
-                    }`}
-                    onClick={() => setInkTool("pen")}
-                  >
-                    Pen
-                  </button>
-                  <button
-                    type="button"
-                    className={`text-xs md:text-sm px-2 py-1 rounded-md border transition-colors ${
-                      inkTool === "highlighter"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border hover:border-primary/60 hover:bg-accent/40"
-                    }`}
-                    onClick={() => setInkTool("highlighter")}
-                  >
-                    Highlighter
-                  </button>
-                  <div className="flex items-center gap-1">
-                    {inkColors.map((color) => (
-                      <button
-                        key={color.value}
-                        type="button"
-                        className={`h-5 w-5 rounded-full border ${
-                          inkColor === color.value
-                            ? "border-foreground"
-                            : "border-transparent"
-                        }`}
-                        style={{ backgroundColor: color.value }}
-                        onClick={() => setInkColor(color.value)}
-                        aria-label={`Ink color ${color.name}`}
-                      />
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    className="text-xs md:text-sm px-2 py-1 rounded-md border border-border hover:border-primary/60 hover:bg-accent/40 transition-colors"
-                    onClick={handleClearInk}
-                    disabled={inkStrokes.length === 0}
-                  >
-                    Clear
-                  </button>
-                </>
-              )}
-            </div>
-            <div className="relative w-full md:w-[260px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 h-4 w-4 pointer-events-none" />
-              <input
-                type="text"
-                className="w-full rounded-full border border-border bg-background/80 px-9 py-1.5 text-sm shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                placeholder="E.g. John 3 or Matt 5:4"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void handleSearchSubmit(searchQuery);
-                  }
-                }}
-              />
-              {(searchSuggestions.length > 0 || searchPreview) && (
-                <div className="absolute left-0 right-0 mt-1 rounded-xl border bg-popover shadow-sm z-10 overflow-hidden">
-                  {searchSuggestions.slice(0, 8).map((s) => (
-                    <button
-                      key={s.value}
-                      type="button"
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => void handleSearchSubmit(s.value)}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
-                  {searchPreview && (
-                    <div className="border-t px-3 py-2 text-sm bg-card">
-                      <div className="text-[11px] font-mono text-muted-foreground">
-                        {searchPreview.ref}
-                      </div>
-                      <div className="text-sm text-foreground/90 leading-snug">
-                        {searchPreview.text}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Strong’s dictionary moved into the main column */}
-      </div>
-
+    <div className={`h-full min-h-0 flex flex-col ${inkEnabled ? "select-none" : ""}`}>
       {/* MAIN SCROLL AREA */}
       <div className="relative flex-1 min-h-0">
         <ScrollArea
-          className="h-full flex-1 min-h-0"
+          className="h-full flex-1 min-h-0 relative z-10"
           viewportRef={scrollViewportRef}
           onViewportScroll={handleScroll}
+          onWheelCapture={(event) => {
+            if (inkTool === "lasso") {
+              event.preventDefault();
+            }
+          }}
+          onTouchMove={(event) => {
+            if (inkTool === "lasso") {
+              if (event.cancelable) event.preventDefault();
+            }
+          }}
         >
           <div
-            className="max-w-none w-full px-3 py-4 pb-4"
+            ref={verseContentRef}
+            className={`relative max-w-none w-full px-3 py-4 pb-4 ${
+              inkEnabled && inkTool !== "select" && inkTool !== "lasso"
+                ? "select-none pointer-events-none"
+                : ""
+            }`}
+            onPointerDown={handleLassoPointerDown}
+            onPointerMove={handleLassoPointerMove}
+            onPointerUp={handleLassoPointerUp}
+            onPointerLeave={handleLassoPointerUp}
+            onTouchStart={handleLassoTouchStart}
+            onTouchMove={handleLassoTouchMove}
+            onTouchEnd={handleLassoTouchEnd}
             style={{
+              touchAction: inkTool === "lasso" ? "none" : undefined,
               fontSize: `${fontSize}px`,
               fontFamily:
                 fontFamily === "serif"
@@ -1938,107 +3214,37 @@ export function BibleReader({
                       : "var(--font-sans)",
             }}
           >
+          {lassoRect && (
+            <div
+              className="pointer-events-none absolute z-20 rounded-md border border-primary/60 bg-primary/10"
+              style={{
+                left: lassoRect.x,
+                top: lassoRect.y,
+                width: lassoRect.width,
+                height: lassoRect.height,
+              }}
+            />
+          )}
+          {inkTool === "lasso" && lassoSelectedPayload && lassoSelectionBounds && (
+            <div
+              className="absolute z-20"
+              style={{
+                left: lassoSelectionBounds.x,
+                top: Math.max(0, lassoSelectionBounds.y - 28),
+              }}
+            >
+              <button
+                type="button"
+                className="cursor-grab active:cursor-grabbing rounded-full border border-primary/60 bg-primary/10 px-3 py-1 text-[11px] text-primary shadow"
+                draggable
+                data-lasso-control
+                onDragStart={handleLassoDragStart}
+              >
+                Drag selection
+              </button>
+            </div>
+          )}
           <div className="md:flex md:items-start md:gap-6">
-            {/* Left: Strong's dictionary */}
-            {hasSelectedStrong && selectedStrong && (
-              <div className="md:w-80 lg:w-96 md:sticky md:top-6 mb-6 md:mb-0 h-[80vh] overflow-y-auto pr-2 space-y-3">
-                {/* Header row */}
-                <div className="flex items-center justify-between text-[11px] md:text-xs uppercase tracking-wide text-muted-foreground">
-                  <span>
-                    Strong&apos;s {selectedStrong.strongNumber} ·{" "}
-                    {selectedStrong.verseReference}
-                  </span>
-                  {isScanningOccurrences && (
-                    <span className="text-[11px] md:text-xs text-muted-foreground/80">
-                      Scanning NT…
-                    </span>
-                  )}
-                </div>
-
-                <StrongDefinitionInline
-                  strongNumber={selectedStrong.strongNumber}
-                />
-
-                {/* Occurrences toggle + panel */}
-                <div className="pt-1 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] md:text-xs text-muted-foreground">
-                      New Testament occurrences:{" "}
-                      {isScanningOccurrences
-                        ? "scanning…"
-                        : strongOccurrences.length}
-                    </span>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowOccurrences((prev) => !prev)}
-                      className="text-[11px] md:text-xs px-2 py-1 rounded-full border border-border hover:border-primary/60 hover:bg-accent/40 transition-colors"
-                    >
-                      {showOccurrences
-                        ? "Close occurrences"
-                        : "Show occurrences"}
-                    </button>
-                  </div>
-
-                  {showOccurrences && (
-                    <div className="max-h-[58vh] overflow-y-auto space-y-2 pr-1 border-t border-border/70 pt-3 pb-2">
-                      {isScanningOccurrences && (
-                        <p className="text-[11px] md:text-xs text-muted-foreground">
-                          Scanning New Testament for Strong&apos;s{" "}
-                          {selectedStrong.strongNumber}…
-                        </p>
-                      )}
-
-                      {!isScanningOccurrences &&
-                        strongOccurrences.length > 0 &&
-                        strongOccurrences.map((occ) => (
-                          <button
-                            key={`${occ.verseId}-${occ.matchText}-${occ.reference}`}
-                            type="button"
-                            onClick={() => handleJumpToOccurrence(occ)}
-                            className="w-full text-left rounded-lg bg-card px-3 py-3 md:px-4 md:py-3 hover:bg-accent/70 hover:shadow-sm transition-colors"
-                          >
-                            <div className="text-[11px] md:text-xs font-mono text-primary mb-1">
-                              {occ.reference}
-                            </div>
-                            <div className="text-sm md:text-base text-foreground/90 leading-snug">
-                              {renderHighlightedText(
-                                occ.verseText,
-                                occ.matchText
-                              )}
-                            </div>
-                          </button>
-                        ))}
-
-                      {!isScanningOccurrences &&
-                        strongOccurrences.length === 0 && (
-                          <p className="text-[11px] md:text-xs text-muted-foreground">
-                            No New Testament occurrences found (or Strong&apos;s
-                            tagging is missing in this dataset).
-                          </p>
-                        )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Close Strong's */}
-                <div className="flex justify-center pt-1">
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 text-[11px] md:text-xs text-muted-foreground hover:text-primary transition-colors"
-                    onClick={() => {
-                      setSelectedStrong(null);
-                      setStrongOccurrences([]);
-                      setShowOccurrences(false);
-                    }}
-                  >
-                    <ChevronDown className="h-3 w-3" />
-                    <span>Close Strong&apos;s</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
             {/* Right: verses */}
             <div className="flex-1 min-w-[50%]">
               {verses.map((verse) => {
@@ -2191,6 +3397,8 @@ export function BibleReader({
                                     }
                                   : null
                               }
+                              selectedWordIds={lassoSelectedWordIds}
+                              selectedWordsPayload={lassoSelectedPayload}
                             />
                           </div>
                         </div>
@@ -2316,6 +3524,8 @@ export function BibleReader({
                           }
                         : null
                     }
+                    selectedWordIds={lassoSelectedWordIds}
+                    selectedWordsPayload={lassoSelectedPayload}
                   />
                 </div>
 
@@ -2334,115 +3544,348 @@ export function BibleReader({
             </div>
 
             {showNotes && (
-              <div className="mt-0 md:mt-0 md:w-80 lg:w-96 md:sticky md:top-[-2px] h-[80vh] overflow-y-auto pr-2 space-y-3">
-                {panelVerseId && hasPanelNotes && (
+              <div className="flex items-start gap-3 md:sticky md:top-0 self-start">
+                <div className="flex flex-col items-center gap-2 rounded-full border border-border/60 bg-background/80 px-1.5 py-2 shadow-sm backdrop-blur">
+                  <button
+                    type="button"
+                    className={`rounded-full border px-2 py-2 text-[10px] uppercase tracking-[0.2em] transition [writing-mode:vertical-rl] ${
+                      notesPanelTab === "notes"
+                        ? "border-primary bg-primary/15 text-primary shadow-sm"
+                        : "border-border text-muted-foreground hover:border-primary/60 hover:bg-accent/40"
+                    }`}
+                    onClick={() => setNotesPanelTab("notes")}
+                  >
+                    Notes
+                  </button>
+                  {hasSelectedStrong && (
+                    <>
+                      <button
+                        type="button"
+                        className={`rounded-full border px-2 py-2 text-[10px] uppercase tracking-[0.2em] transition [writing-mode:vertical-rl] ${
+                          notesPanelTab === "definition"
+                            ? "border-primary bg-primary/15 text-primary shadow-sm"
+                            : "border-border text-muted-foreground hover:border-primary/60 hover:bg-accent/40"
+                        }`}
+                        onClick={() => setNotesPanelTab("definition")}
+                      >
+                        Definition
+                      </button>
+                      <button
+                        type="button"
+                        className={`rounded-full border px-2 py-2 text-[10px] uppercase tracking-[0.2em] transition [writing-mode:vertical-rl] ${
+                          notesPanelTab === "occurrences"
+                            ? "border-primary bg-primary/15 text-primary shadow-sm"
+                            : "border-border text-muted-foreground hover:border-primary/60 hover:bg-accent/40"
+                        }`}
+                        onClick={() => setNotesPanelTab("occurrences")}
+                      >
+                        Occurrences
+                      </button>
+                    </>
+                  )}
+                </div>
+                <div
+                  ref={notesPanelRef}
+                  className="relative mt-0 md:mt-0 md:w-[320px] lg:w-[380px] h-[calc(100vh-220px)] max-h-[calc(100vh-220px)] pr-2 space-y-3 min-w-[240px] max-w-[720px] overflow-visible"
+                  style={notesPanelWidth ? { width: notesPanelWidth } : undefined}
+                >
+                  <div
+                    className="absolute left-0 top-1/2 z-10 h-14 w-4 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-full border border-border bg-background shadow"
+                    style={{ touchAction: "none" }}
+                    onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const panel = notesPanelRef.current;
+                    if (!panel) return;
+                    setIsResizingNotesPanel(true);
+                    notesPanelResizeRef.current = {
+                      startX: e.clientX,
+                      startWidth: panel.getBoundingClientRect().width,
+                    };
+                  }}
+                />
+                {notesPanelTab === "notes" && (
                   <>
-                    {rangeNoteForPanel && rangeRefForPanel && (
-                      <NoteEditor
-                        note={rangeNoteForPanel}
-                        verseId={rangeNoteForPanel.verseId}
-                        verseReference={rangeRefForPanel}
-                        fontSize={fontSize}
-                        enableRange={false}
-                        onSave={(content, opts) =>
-                          handleUpdateNote(rangeNoteForPanel.id, content, {
-                            theme: opts?.theme,
-                            crossReferences: opts?.crossReferences,
-                            title: opts?.title,
-                          })
-                        }
-                        onDelete={() => handleDeleteNote(rangeNoteForPanel.id)}
-                        onCancel={() => {}}
-                        onCrossReferenceClick={handleCrossReferenceClick}
-                      />
-                    )}
-
-                    {verseNotesForPanel.map((note) => (
-                      <NoteEditor
-                        key={note.id}
-                        note={note}
-                        verseId={note.verseId}
-                        verseReference={getVerseNoteRef(note)}
-                        fontSize={fontSize}
-                        enableRange={false}
-                        onSave={(content, opts) =>
-                          handleUpdateNote(note.id, content, {
-                            theme: opts?.theme,
-                            crossReferences: opts?.crossReferences,
-                            title: opts?.title,
-                          })
-                        }
-                        onDelete={() => handleDeleteNote(note.id)}
-                        onCancel={() => {}}
-                        onCrossReferenceClick={handleCrossReferenceClick}
-                      />
-                    ))}
-
-                    {wordNotesForPanel.map((note) => (
-                      <NoteEditor
-                        key={note.id}
-                        note={note as RangeNote}
-                        verseId={note.verseId}
-                        verseReference={panelVerseRef}
-                        fontSize={fontSize}
-                        wordText={note.wordText}
-                        enableRange={false}
-                        onSave={(content, opts) =>
-                          handleUpdateNote(note.id, content, {
-                            theme: opts?.theme,
-                            crossReferences: opts?.crossReferences,
-                            title: opts?.title,
-                          })
-                        }
-                        onDelete={() => handleDeleteNote(note.id)}
-                        onCancel={() => {}}
-                        onCrossReferenceClick={handleCrossReferenceClick}
-                      />
-                    ))}
-
-                    {addingNote?.verseId === panelVerseId && (
-                      <NoteEditor
-                        note={
-                          addingNote.wordIndex !== undefined
-                            ? (wordNotesForPanel.find(
-                                (n) => n.wordIndex === addingNote.wordIndex
-                              ) as RangeNote | undefined)
-                            : undefined
-                        }
-                        verseId={panelVerseId}
-                        verseReference={panelVerseRef}
-                        fontSize={fontSize}
-                        wordText={addingNote.wordText}
-                        enableRange={addingNote.wordIndex === undefined}
-                        onSave={(content, opts) => {
-                          if (addingNote.wordIndex !== undefined) {
-                            handleSaveWordNote(
-                              addingNote.wordIndex,
-                              content,
-                              opts
-                            );
-                          } else {
-                            handleSaveNote(content, opts);
-                          }
-                          setAddingNote(null);
-                        }}
-                        onDelete={() => {
-                          if (addingNote.wordIndex !== undefined) {
-                            const existingNote = wordNotesForPanel.find(
-                              (n) => n.wordIndex === addingNote.wordIndex
-                            );
-                            if (existingNote) {
-                              handleDeleteNote(existingNote.id);
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex rounded-full border border-border/70 bg-background/90 text-[10px] text-muted-foreground shadow-sm">
+                        <button
+                          type="button"
+                          className={`px-2 py-0.5 transition ${
+                            !noteLinkRangeMode
+                              ? "rounded-full bg-primary text-primary-foreground"
+                              : "text-muted-foreground"
+                          }`}
+                          onClick={() => {
+                            setNoteLinkRangeMode(false);
+                            setNoteLinkRangeEndVerse(noteLinkStartVerseNumber);
+                          }}
+                        >
+                          Single
+                        </button>
+                        <button
+                          type="button"
+                          className={`px-2 py-0.5 transition ${
+                            noteLinkRangeMode
+                              ? "rounded-full bg-primary text-primary-foreground"
+                              : "text-muted-foreground"
+                          }`}
+                          onClick={() => {
+                            setNoteLinkRangeMode(true);
+                            setNoteLinkRangeEndVerse(noteLinkStartVerseNumber);
+                          }}
+                        >
+                          Multiple
+                        </button>
+                      </div>
+                      <div className="relative inline-flex">
+                        <div
+                          className={`flex items-center gap-2 rounded-full border border-border/70 bg-background/90 px-2 py-0.5 text-[11px] text-foreground shadow-sm ${
+                            noteLinkRangeOptions.length === 0 ? "opacity-50" : ""
+                          }`}
+                        >
+                          <span>{noteLinkRangeDisplay}</span>
+                          {noteLinkRangeMode && (
+                            <span className="text-[10px] text-muted-foreground">
+                              ▾
+                            </span>
+                          )}
+                        </div>
+                        {noteLinkRangeMode && (
+                          <select
+                            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                            value={noteLinkRangeEndVerse ?? noteLinkStartVerseNumber}
+                            onChange={(e) =>
+                              setNoteLinkRangeEndVerse(Number(e.target.value))
                             }
-                          }
-                          setAddingNote(null);
-                        }}
-                        onCancel={() => setAddingNote(null)}
-                        onCrossReferenceClick={handleCrossReferenceClick}
+                            disabled={!noteLinkRangeOptions.length}
+                          >
+                            {noteLinkRangeOptions.length === 0 && (
+                              <option value={noteLinkStartVerseNumber}>1</option>
+                            )}
+                            {noteLinkRangeOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                      <select
+                        className="min-w-[160px] rounded-md border border-border bg-background px-2 py-1 text-xs"
+                        value={activeNotebookId ?? ""}
+                        onChange={(e) => setActiveNotebookId(e.target.value)}
+                      >
+                        {notebooks.length === 0 && (
+                          <option value="" disabled>
+                            No notebooks
+                          </option>
+                        )}
+                        {notebooks.map((notebook) => (
+                          <option key={notebook.id} value={notebook.id}>
+                            {notebook.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="text-[11px] md:text-xs px-2 py-1 rounded-md border border-border hover:border-primary/60 hover:bg-accent/40 transition-colors"
+                        onClick={handleRenameNotebook}
+                        disabled={!activeNotebookId}
+                      >
+                        Rename
+                      </button>
+                      <button
+                        type="button"
+                        className="text-[11px] md:text-xs px-2 py-1 rounded-md border border-border hover:border-primary/60 hover:bg-accent/40 transition-colors"
+                        onClick={handleCreateNotebook}
+                      >
+                        New
+                      </button>
+                    </div>
+                    <div
+                      ref={notesAreaRef}
+                      className={`relative h-full rounded-xl border border-dashed border-border/70 bg-card/50 px-3 py-3 ${isResizingNotesPanel ? "overflow-hidden" : "overflow-y-auto"}`}
+                      onDragOver={handleNotesDragOver}
+                      onDrop={handleNotesDrop}
+                    >
+                      <div
+                        className="min-h-full"
+                        style={{ height: notesScrollHeight }}
                       />
-                    )}
+                      <div className="absolute inset-0 pointer-events-none">
+                        {visibleInkTextBoxes.map((box) => (
+                          <div
+                            key={box.id}
+                            data-ink-textbox
+                            className="absolute pointer-events-auto border border-primary/60 bg-transparent"
+                            style={{
+                              left: box.x,
+                              top: box.y,
+                              width: box.width,
+                              height: box.height,
+                              borderWidth: box.borderWidth,
+                              touchAction: "pan-y",
+                            }}
+                          >
+                            <textarea
+                              className="h-full w-full resize-none bg-transparent px-2 py-1 text-foreground outline-none"
+                              readOnly={!box.isEditing}
+                              style={{ touchAction: "pan-y" }}
+                              value={box.text}
+                              onChange={(e) =>
+                                updateTextBoxById(box.id, (current) => ({
+                                  ...current,
+                                  text: e.target.value,
+                                }))
+                              }
+                            />
+                            <button
+                              type="button"
+                              className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-border bg-background/90 px-2 py-0.5 text-[10px] text-muted-foreground shadow"
+                              onClick={() =>
+                                updateTextBoxById(box.id, (current) => ({
+                                  ...current,
+                                  isEditing: !current.isEditing,
+                                }))
+                              }
+                            >
+                              {box.isEditing ? "Done" : "Edit"}
+                            </button>
+                            {box.isEditing && (
+                              <div
+                                className="absolute -left-2 top-1/2 h-4 w-4 -translate-y-1/2 cursor-ew-resize rounded-full border border-border bg-background shadow"
+                                style={{ touchAction: "none" }}
+                                onPointerDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  textBoxResizeRef.current = {
+                                    id: box.id,
+                                    startX: e.clientX,
+                                    startY: e.clientY,
+                                    startLeft: box.x,
+                                    startWidth: box.width,
+                                    startHeight: box.height,
+                                  };
+                                }}
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </>
                 )}
+                {notesPanelTab === "definition" && hasSelectedStrong && selectedStrong && (
+                  <div className="h-full rounded-xl border border-border/70 bg-card/50 px-3 py-3 overflow-y-auto space-y-3">
+                    <div className="flex items-center justify-between text-[11px] md:text-xs uppercase tracking-wide text-muted-foreground">
+                      <span>
+                        Strong&apos;s {selectedStrong.strongNumber} ·{" "}
+                        {selectedStrong.verseReference}
+                      </span>
+                      {isScanningOccurrences && (
+                        <span className="text-[11px] md:text-xs text-muted-foreground/80">
+                          Scanning NT…
+                        </span>
+                      )}
+                    </div>
+
+                    <StrongDefinitionInline
+                      strongNumber={selectedStrong.strongNumber}
+                    />
+
+                    <div className="flex justify-center pt-1">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 text-[11px] md:text-xs text-muted-foreground hover:text-primary transition-colors"
+                        onClick={() => {
+                          setSelectedStrong(null);
+                          setStrongOccurrences([]);
+                          setShowOccurrences(false);
+                          setNotesPanelTab("notes");
+                        }}
+                      >
+                        <ChevronDown className="h-3 w-3" />
+                        <span>Close Strong&apos;s</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {notesPanelTab === "occurrences" && hasSelectedStrong && selectedStrong && (
+                  <div className="h-full rounded-xl border border-border/70 bg-card/50 px-3 py-3 overflow-y-auto space-y-3">
+                    <div className="flex items-center justify-between text-[11px] md:text-xs uppercase tracking-wide text-muted-foreground">
+                      <span>
+                        Strong&apos;s {selectedStrong.strongNumber} ·{" "}
+                        {selectedStrong.verseReference}
+                      </span>
+                      {isScanningOccurrences && (
+                        <span className="text-[11px] md:text-xs text-muted-foreground/80">
+                          Scanning NT…
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="text-[11px] md:text-xs text-muted-foreground">
+                      New Testament occurrences:{" "}
+                      {isScanningOccurrences
+                        ? "scanning…"
+                        : strongOccurrences.length}
+                    </div>
+
+                    <div className="max-h-[58vh] overflow-y-auto space-y-2 pr-1 border-t border-border/70 pt-3 pb-2">
+                      {isScanningOccurrences && (
+                        <p className="text-[11px] md:text-xs text-muted-foreground">
+                          Scanning New Testament for Strong&apos;s{" "}
+                          {selectedStrong.strongNumber}…
+                        </p>
+                      )}
+
+                      {!isScanningOccurrences &&
+                        strongOccurrences.length > 0 &&
+                        strongOccurrences.map((occ) => (
+                          <button
+                            key={`${occ.verseId}-${occ.matchText}-${occ.reference}`}
+                            type="button"
+                            onClick={() => handleJumpToOccurrence(occ)}
+                            className="w-full text-left rounded-lg bg-card px-3 py-3 md:px-4 md:py-3 hover:bg-accent/70 hover:shadow-sm transition-colors"
+                          >
+                            <div className="text-[11px] md:text-xs font-mono text-primary mb-1">
+                              {occ.reference}
+                            </div>
+                            <div className="text-sm md:text-base text-foreground/90 leading-snug">
+                              {renderHighlightedText(
+                                occ.verseText,
+                                occ.matchText
+                              )}
+                            </div>
+                          </button>
+                        ))}
+
+                      {!isScanningOccurrences &&
+                        strongOccurrences.length === 0 && (
+                          <p className="text-[11px] md:text-xs text-muted-foreground">
+                            No New Testament occurrences found (or Strong&apos;s
+                            tagging is missing in this dataset).
+                          </p>
+                        )}
+                    </div>
+
+                    <div className="flex justify-center pt-1">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 text-[11px] md:text-xs text-muted-foreground hover:text-primary transition-colors"
+                        onClick={() => {
+                          setSelectedStrong(null);
+                          setStrongOccurrences([]);
+                          setNotesPanelTab("notes");
+                        }}
+                      >
+                        <ChevronDown className="h-3 w-3" />
+                        <span>Close Strong&apos;s</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+                </div>
               </div>
             )}
           </div>
@@ -2451,11 +3894,597 @@ export function BibleReader({
         {inkEnabled && (
           <canvas
             ref={inkCanvasRef}
-            className="absolute inset-0 z-20 pointer-events-none"
+            className={`absolute inset-0 z-0 pointer-events-none ${
+              isInkScrolling ? "opacity-0" : "opacity-100"
+            }`}
           />
+        )}
+        {inkEnabled && inkTool === "eraser" && (
+          <div className="absolute inset-0 z-20 pointer-events-none">
+            <div
+              ref={eraserCursorRef}
+              className="absolute rounded-full border border-primary/70 bg-primary/10"
+              style={{
+                width: eraserSize,
+                height: eraserSize,
+                left: 0,
+                top: 0,
+                opacity: 0,
+                transform: "translate3d(-9999px, -9999px, 0)",
+                willChange: "transform",
+              }}
+            />
+          </div>
         )}
       </div>
 
+      <div className="fixed bottom-4 left-1/2 z-50 w-[min(100%-1.5rem,860px)] -translate-x-1/2">
+        <div className="relative flex justify-center">
+          {showInkSettings && inkTool !== "select" && (
+            <div className="absolute bottom-full mb-3 w-[min(100%,520px)]">
+              <div className="rounded-2xl border border-border/70 bg-background/95 px-3 py-2 shadow-xl backdrop-blur">
+                {inkTool !== "eraser" && (
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    {inkColors.map((color) => (
+                      <button
+                        key={color.value}
+                        type="button"
+                        className={`h-6 w-6 rounded-full border transition-all ${
+                          inkColor === color.value
+                            ? "border-foreground shadow-md scale-110"
+                            : "border-transparent hover:scale-105"
+                        }`}
+                        style={{ backgroundColor: color.value }}
+                        onClick={() => {
+                          setInkColor(color.value);
+                          setShowInkSettings(false);
+                        }}
+                        aria-label={`Ink color ${color.name}`}
+                      />
+                    ))}
+                  </div>
+                )}
+                <div className="mt-2 flex flex-wrap items-center justify-center gap-3 text-[10px] md:text-xs">
+                  <label className="flex items-center gap-2">
+                    <span className="text-muted-foreground">
+                      {inkTool === "pen"
+                        ? "Pen size"
+                        : inkTool === "highlighter"
+                          ? "HL size"
+                          : inkTool === "eraser"
+                            ? "Eraser"
+                            : "Border"}
+                    </span>
+                    <input
+                      type="range"
+                      min={inkTool === "highlighter" ? 6 : inkTool === "eraser" ? 6 : 1}
+                      max={inkTool === "highlighter" ? 40 : inkTool === "eraser" ? 60 : 12}
+                      step={inkTool === "pen" ? 0.5 : 1}
+                      value={
+                        inkTool === "highlighter"
+                          ? highlighterSize
+                          : inkTool === "eraser"
+                            ? eraserSize
+                            : penSize
+                      }
+                      onChange={(e) =>
+                        inkTool === "highlighter"
+                          ? setHighlighterSize(parseFloat(e.target.value))
+                          : inkTool === "eraser"
+                            ? setEraserSize(parseFloat(e.target.value))
+                            : setPenSize(parseFloat(e.target.value))
+                      }
+                      onPointerUp={() => setShowInkSettings(false)}
+                      className="w-28"
+                    />
+                    <span className="w-8 text-right">
+                      {inkTool === "highlighter"
+                        ? Math.round(highlighterSize)
+                        : inkTool === "eraser"
+                          ? Math.round(eraserSize)
+                          : penSize.toFixed(1)}
+                    </span>
+                  </label>
+                  {inkTool === "highlighter" && (
+                    <label className="flex items-center gap-2">
+                      <span className="text-muted-foreground">Opacity</span>
+                      <input
+                        type="range"
+                        min={0.1}
+                        max={1}
+                        step={0.05}
+                        value={highlighterOpacity}
+                        onChange={(e) =>
+                          setHighlighterOpacity(parseFloat(e.target.value))
+                        }
+                        onPointerUp={() => setShowInkSettings(false)}
+                        className="w-28"
+                      />
+                      <span className="w-8 text-right">
+                        {Math.round(highlighterOpacity * 100)}%
+                      </span>
+                    </label>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          <div
+            className="flex items-center justify-between rounded-2xl border border-border/70 bg-background/95 px-3 py-2 shadow-xl backdrop-blur"
+          >
+            <div className="flex items-center justify-center gap-2">
+              <button
+              type="button"
+              className={`h-9 w-9 rounded-full border transition-colors flex items-center justify-center ${
+                inkTool === "select"
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border hover:border-primary/60 hover:bg-accent/40"
+              }`}
+              onClick={() => {
+                setInkTool("select");
+                setShowInkSettings(false);
+              }}
+              aria-label="Select tool"
+            >
+              <MousePointer2 className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              className={`h-9 w-9 rounded-full border transition-colors flex items-center justify-center ${
+                inkTool === "lasso"
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border hover:border-primary/60 hover:bg-accent/40"
+              }`}
+              onClick={() => {
+                setInkTool("lasso");
+                setShowInkSettings(false);
+              }}
+              aria-label="Lasso tool"
+            >
+              <Lasso className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              className={`h-9 w-9 rounded-full border transition-colors flex items-center justify-center ${
+                inkTool === "pen"
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border hover:border-primary/60 hover:bg-accent/40"
+              }`}
+              onClick={() => {
+                setInkTool("pen");
+                setShowInkSettings(true);
+              }}
+              aria-label="Pen tool"
+            >
+              <PenTool className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              className={`h-9 w-9 rounded-full border transition-colors flex items-center justify-center ${
+                inkTool === "highlighter"
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border hover:border-primary/60 hover:bg-accent/40"
+              }`}
+              onClick={() => {
+                setInkTool("highlighter");
+                setShowInkSettings(true);
+              }}
+              aria-label="Highlighter tool"
+            >
+              <Highlighter className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              className={`h-9 w-9 rounded-full border transition-colors flex items-center justify-center ${
+                inkTool === "textbox"
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border hover:border-primary/60 hover:bg-accent/40"
+              }`}
+              onClick={() => {
+                setInkTool("textbox");
+                setShowInkSettings(true);
+              }}
+              aria-label="Text box tool"
+            >
+              <Type className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              className={`h-9 w-9 rounded-full border transition-colors flex items-center justify-center ${
+                inkTool === "eraser"
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border hover:border-primary/60 hover:bg-accent/40"
+              }`}
+              onClick={() => {
+                setInkTool("eraser");
+                setShowInkSettings(true);
+              }}
+              aria-label="Eraser tool"
+            >
+              <Eraser className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              className="text-[11px] md:text-xs px-2 py-1 rounded-full border border-border hover:border-primary/60 hover:bg-accent/40 transition-colors"
+              onClick={handleClearInk}
+              disabled={
+                inkStrokes.length === 0 &&
+                inkTextBoxes.length === 0 &&
+                inkTexts.length === 0
+              }
+            >
+              Clear
+            </button>
+            </div>
+            <div className="mx-3 h-8 w-px bg-border/70" />
+            <div className="flex items-center justify-center gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="h-9 w-9 rounded-full border border-border/70 text-muted-foreground transition-colors hover:border-primary/60 hover:bg-accent/40 flex items-center justify-center"
+                    aria-label="Search"
+                  >
+                    <Search className="h-4 w-4" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  side="top"
+                  align="end"
+                  className="w-[min(90vw,320px)] rounded-2xl border border-border/70 bg-background/95 p-3 shadow-xl backdrop-blur"
+                >
+                  <div className="relative w-full">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 h-4 w-4 pointer-events-none" />
+                    <input
+                      type="text"
+                      className="w-full rounded-full border border-border bg-background/80 px-9 py-1.5 text-sm shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      placeholder="E.g. John 3 or Matt 5:4"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void handleSearchSubmit(searchQuery);
+                        }
+                      }}
+                    />
+                    {(searchSuggestions.length > 0 || searchPreview) && (
+                      <div className="mt-1 rounded-xl border bg-popover shadow-sm overflow-hidden">
+                        {searchSuggestions.slice(0, 8).map((s) => (
+                          <button
+                            key={s.value}
+                            type="button"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => void handleSearchSubmit(s.value)}
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                        {searchPreview && (
+                          <div className="border-t px-3 py-2 text-sm bg-card">
+                            <div className="text-[11px] font-mono text-muted-foreground">
+                              {searchPreview.ref}
+                            </div>
+                            <div className="text-sm text-foreground/90 leading-snug">
+                              {searchPreview.text}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+              {onToggleTheme && theme && (
+                <button
+                  type="button"
+                  className="h-9 w-9 rounded-full border border-border/70 text-muted-foreground transition-colors hover:border-primary/60 hover:bg-accent/40 flex items-center justify-center"
+                  onClick={onToggleTheme}
+                  aria-label="Toggle theme"
+                >
+                  {theme === "light" ? (
+                    <Moon className="h-4 w-4" />
+                  ) : (
+                    <Sun className="h-4 w-4" />
+                  )}
+                </button>
+              )}
+              <button
+                type="button"
+                className="h-9 w-9 rounded-full border border-border/70 text-muted-foreground transition-colors hover:border-primary/60 hover:bg-accent/40 flex items-center justify-center disabled:opacity-40 disabled:hover:border-border disabled:hover:bg-transparent"
+                onClick={handlePrevChapter}
+                disabled={!canGoPrevChapter}
+                aria-label="Previous chapter"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <div className="min-w-[170px] text-center text-xs font-medium text-foreground/80">
+                {book} {chapter} · {selectedTranslation}
+              </div>
+              <button
+                type="button"
+                className="h-9 w-9 rounded-full border border-border/70 text-muted-foreground transition-colors hover:border-primary/60 hover:bg-accent/40 flex items-center justify-center disabled:opacity-40 disabled:hover:border-border disabled:hover:bg-transparent"
+                onClick={handleNextChapter}
+                disabled={!canGoNextChapter}
+                aria-label="Next chapter"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            <Popover open={bookPopoverOpen} onOpenChange={setBookPopoverOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="h-9 w-9 rounded-full border border-border/70 text-muted-foreground transition-colors hover:border-primary/60 hover:bg-accent/40 flex items-center justify-center"
+                  aria-label="Choose book and chapter"
+                >
+                  <BookOpen className="h-4 w-4" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="center"
+                className="w-72 rounded-2xl border border-border/70 bg-background/95 p-3 shadow-xl backdrop-blur"
+              >
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Jump to
+                </div>
+                <div className="mt-2 space-y-2">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">Book</Label>
+                    <div className="rounded-md border border-border bg-background">
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between px-2 py-1 text-left text-xs font-medium"
+                        onClick={() => setBookPickerOldOpen((prev) => !prev)}
+                      >
+                        <span>Old Testament</span>
+                        <span className="text-muted-foreground">
+                          {bookPickerOldOpen ? "−" : "+"}
+                        </span>
+                      </button>
+                      {bookPickerOldOpen && (
+                        <div className="max-h-40 overflow-y-auto border-t border-border/70">
+                          {oldTestamentBooks.map((entry) => (
+                            <button
+                              key={entry.name}
+                              type="button"
+                              className={`w-full px-2 py-1 text-left text-xs transition-colors hover:bg-accent ${
+                                entry.name === bookPickerBook
+                                  ? "bg-accent/60 text-primary"
+                                  : ""
+                              }`}
+                              onClick={() => handleBookPickerBookChange(entry.name)}
+                            >
+                              {entry.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="border-t border-border/70" />
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between px-2 py-1 text-left text-xs font-medium"
+                        onClick={() => setBookPickerNewOpen((prev) => !prev)}
+                      >
+                        <span>New Testament</span>
+                        <span className="text-muted-foreground">
+                          {bookPickerNewOpen ? "−" : "+"}
+                        </span>
+                      </button>
+                      {bookPickerNewOpen && (
+                        <div className="max-h-40 overflow-y-auto border-t border-border/70">
+                          {newTestamentBooks.map((entry) => (
+                            <button
+                              key={entry.name}
+                              type="button"
+                              className={`w-full px-2 py-1 text-left text-xs transition-colors hover:bg-accent ${
+                                entry.name === bookPickerBook
+                                  ? "bg-accent/60 text-primary"
+                                  : ""
+                              }`}
+                              onClick={() => handleBookPickerBookChange(entry.name)}
+                            >
+                              {entry.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">
+                      Chapter
+                    </Label>
+                    <select
+                      className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
+                      value={bookPickerChapter}
+                      onChange={(e) =>
+                        setBookPickerChapter(Number(e.target.value))
+                      }
+                    >
+                      {bookPickerChapterOptions.map((chapterNumber) => (
+                        <option key={chapterNumber} value={chapterNumber}>
+                          {chapterNumber}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    className="w-full rounded-md border border-border bg-primary/10 px-2 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/20 disabled:opacity-50"
+                    onClick={() => {
+                      onNavigate?.(bookPickerBook, bookPickerChapter);
+                      setBookPopoverOpen(false);
+                    }}
+                    disabled={!onNavigate}
+                  >
+                    Go
+                  </button>
+                </div>
+              </PopoverContent>
+            </Popover>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="h-9 w-9 rounded-full border border-border/70 text-muted-foreground transition-colors hover:border-primary/60 hover:bg-accent/40 flex items-center justify-center"
+                  aria-label="App settings"
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="end"
+                className="w-[min(90vw,360px)] rounded-2xl border border-border/70 bg-background/95 p-3 shadow-xl backdrop-blur"
+              >
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Settings
+                </div>
+                <div className="mt-2 space-y-3">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">
+                      Translation
+                    </Label>
+                    <Select
+                      value={selectedTranslation}
+                      onValueChange={(value) =>
+                        onTranslationChange(value as Translation)
+                      }
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {translations.map((trans) => (
+                          <SelectItem key={trans.id} value={trans.id}>
+                            {trans.name} - {trans.fullName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <Label
+                        htmlFor="display-mode-toggle"
+                        className="text-xs"
+                      >
+                        Book mode
+                      </Label>
+                      <Switch
+                        id="display-mode-toggle"
+                        checked={displayMode === "book"}
+                        onCheckedChange={(checked) =>
+                          onDisplayModeChange(checked ? "book" : "verse")
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <Label htmlFor="notes-toggle" className="text-xs">
+                        Show notes
+                      </Label>
+                      <Switch
+                        id="notes-toggle"
+                        checked={showNotes}
+                        onCheckedChange={onToggleNotes}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                      Study tools
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <Label htmlFor="strongs-toggle" className="text-xs">
+                        Strong&apos;s numbers
+                      </Label>
+                      <Switch
+                        id="strongs-toggle"
+                        checked={showStrongsNumbers}
+                        onCheckedChange={onToggleStrongsNumbers}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <Label htmlFor="interlinear-toggle" className="text-xs">
+                        Interlinear
+                      </Label>
+                      <Switch
+                        id="interlinear-toggle"
+                        checked={showInterlinear}
+                        onCheckedChange={onToggleInterlinear}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <Label
+                        htmlFor="strongs-english-only-toggle"
+                        className="text-xs"
+                      >
+                        Strong&apos;s only
+                      </Label>
+                      <Switch
+                        id="strongs-english-only-toggle"
+                        checked={showStrongsEnglishOnly}
+                        onCheckedChange={onToggleStrongsEnglishOnly}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <Label
+                        htmlFor="hide-all-english-toggle"
+                        className="text-xs"
+                      >
+                        Hide all English
+                      </Label>
+                      <Switch
+                        id="hide-all-english-toggle"
+                        checked={hideAllEnglish}
+                        onCheckedChange={onToggleHideAllEnglish}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                      Fonts
+                    </div>
+                    <Slider
+                      value={[fontSize]}
+                      onValueChange={(values) => onFontSizeChange(values[0])}
+                      min={10}
+                      max={40}
+                      step={1}
+                    />
+                    <div className="text-[11px] text-muted-foreground">
+                      Size: {fontSize}px
+                    </div>
+                    <Select
+                      value={fontFamily}
+                      onValueChange={(value) =>
+                        onFontFamilyChange(
+                          value as "serif" | "sans" | "mono" | "gentium"
+                        )
+                      }
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="serif">Crimson Pro (Serif)</SelectItem>
+                        <SelectItem value="gentium">
+                          Gentium Book (Serif)
+                        </SelectItem>
+                        <SelectItem value="sans">Inter (Sans)</SelectItem>
+                        <SelectItem value="mono">JetBrains Mono</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

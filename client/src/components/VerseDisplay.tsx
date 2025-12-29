@@ -1,8 +1,8 @@
 // src/components/VerseDisplay.tsx
 import { useState } from "react";
+import type { DragEvent } from "react";
 import { BibleVerse, Highlight, Note } from "@shared/schema";
 import { Button } from "@/components/ui/button";
-import { Plus, StickyNote } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -44,6 +44,12 @@ interface VerseDisplayProps {
   wordNotes: Note[];
   activeWordNote: { verseId: string; wordIndex: number; wordText?: string } | null;
   activeStrongNumber?: string;
+  selectedWordIds?: Set<string>;
+  selectedWordsPayload?: {
+    text: string;
+    verseId: string | null;
+    words: { id: string; verseId: string; text: string; kind: "english" | "greek" }[];
+  } | null;
 }
 
 const highlightColorMap = {
@@ -79,19 +85,41 @@ export function VerseDisplay(props: VerseDisplayProps) {
   displayMode,
   showWordByWord,
   fontFamily,
-    onAddNote,
-    onAddWordNote,
-    onSaveWordNote, // not used directly, but kept for typing
-    onCancelWordNote, // not used directly, but kept for typing
     onHighlightWord,
     onTextSelect,
     onStrongClick,
     wordNotes,
     activeWordNote, // not used directly, but available if you want to style the active one
     activeStrongNumber,
+    selectedWordIds,
+    selectedWordsPayload,
   } = props;
 
-  const [showAddButton, setShowAddButton] = useState(false);
+  const handleWordDragStart = (
+    event: DragEvent<HTMLElement>,
+    wordText: string,
+    verseId: string,
+    kind: "english" | "greek",
+    wordId?: string
+  ) => {
+    const hasSelection =
+      !!selectedWordsPayload?.words?.length &&
+      !!wordId &&
+      selectedWordIds?.has(wordId);
+    event.dataTransfer.setData(
+      "application/x-bible-word",
+      JSON.stringify(
+        hasSelection
+          ? selectedWordsPayload
+          : { verseId, text: wordText, kind }
+      )
+    );
+    event.dataTransfer.setData(
+      "text/plain",
+      hasSelection ? selectedWordsPayload?.text ?? wordText : wordText
+    );
+    event.dataTransfer.effectAllowed = "copy";
+  };
 
   const handleMouseUp = () => {
     const selection = window.getSelection();
@@ -194,6 +222,10 @@ export function VerseDisplay(props: VerseDisplayProps) {
           const lemma = getLemmaForToken(token);
           const syllables = getSyllablesForToken(token);
           const showEnglishWord = !hideAllEnglish;
+          const englishWordId = `word-en-${verse.id}-${idx}`;
+          const greekWordId = `word-gr-${verse.id}-${idx}`;
+          const isEnglishSelected = selectedWordIds?.has(englishWordId);
+          const isGreekSelected = selectedWordIds?.has(greekWordId);
 
           return (
             <div key={idx} className="inline-flex items-start">
@@ -207,8 +239,19 @@ export function VerseDisplay(props: VerseDisplayProps) {
                     {/* Greek lemma on top */}
                     {lemma && (
                       <span
-                        className="italic text-foreground"
+                        className={`italic text-foreground cursor-grab active:cursor-grabbing ${
+                          isGreekSelected ? "ring-2 ring-primary/60 bg-primary/10 rounded" : ""
+                        }`}
                         style={{ fontSize: lemmaFontSize, fontFamily: baseFont }}
+                        draggable
+                        onDragStart={(event) =>
+                          handleWordDragStart(event, lemma, verse.id, "greek", greekWordId)
+                        }
+                        data-lasso-word
+                        data-word-id={greekWordId}
+                        data-word-text={lemma}
+                        data-word-kind="greek"
+                        data-verse-id={verse.id}
                       >
                         {lemma}
                       </span>
@@ -270,15 +313,31 @@ export function VerseDisplay(props: VerseDisplayProps) {
                     {showEnglishWord && (
                       <span
                         className={[
-                          "font-serif rounded transition-colors",
+                          "font-serif rounded transition-colors cursor-grab active:cursor-grabbing",
                           wordHighlightClass,
                           strongActive
                             ? "ring-2 ring-primary/60 bg-primary/10"
                             : "",
+                          isEnglishSelected ? "ring-2 ring-primary/60 bg-primary/10" : "",
                         ]
                           .filter(Boolean)
                           .join(" ")}
                         style={{ fontSize: englishFontSize, fontFamily: baseFont }}
+                        draggable
+                        onDragStart={(event) =>
+                          handleWordDragStart(
+                            event,
+                            token.english,
+                            verse.id,
+                            "english",
+                            englishWordId
+                          )
+                        }
+                        data-lasso-word
+                        data-word-id={englishWordId}
+                        data-word-text={token.english}
+                        data-word-kind="english"
+                        data-verse-id={verse.id}
                       >
                         {token.english}
                       </span>
@@ -289,35 +348,11 @@ export function VerseDisplay(props: VerseDisplayProps) {
                   className="w-56 p-2 space-y-2"
                   onOpenAutoFocus={(e) => e.preventDefault()}
                 >
-                  {showNotes && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="w-full justify-start"
-                      onClick={() => onAddWordNote(idx, token.english)}
-                      data-testid={`button-add-word-note-${verse.id}-${idx}`}
-                    >
-                      <StickyNote className="h-3 w-3 mr-2" />
-                      {wordNote ? "View/Edit Note" : "Add Note"}
-                    </Button>
-                  )}
-                  {/* Highlight controls removed */}
+                  {/* Note creation removed */}
                 </PopoverContent>
               </Popover>
 
-                {showNotes && wordNote && (
-                  <div
-                    className="text-xs text-muted-foreground bg-muted/50 border rounded px-2 py-1 max-w-[200px]"
-                    data-testid={`word-note-${verse.id}-${idx}`}
-                  >
-                    <div className="flex items-start gap-1">
-                      <StickyNote className="h-3 w-3 text-primary flex-shrink-0 mt-0.5" />
-                      <span className="text-left break-words">
-                        {wordNote.content}
-                      </span>
-                    </div>
-                  </div>
-                )}
+                {/* Word note display removed */}
               </div>
             </div>
           );
@@ -331,8 +366,6 @@ export function VerseDisplay(props: VerseDisplayProps) {
     <div
       className="group relative py-3 scroll-mt-24"
       data-verse-id={verse.id}
-      onMouseEnter={() => setShowAddButton(true)}
-      onMouseLeave={() => setShowAddButton(false)}
     >
       <div className="flex gap-4">
         <div className="text-sm text-muted-foreground font-mono w-8 flex-shrink-0 text-right pt-1">
@@ -366,6 +399,10 @@ export function VerseDisplay(props: VerseDisplayProps) {
                 const lemma = getLemmaForToken(token);
                 const syllables = getSyllablesForToken(token);
                 const showEnglishWord = !hideAllEnglish;
+                const englishWordId = `word-en-${verse.id}-${idx}`;
+                const greekWordId = `word-gr-${verse.id}-${idx}`;
+                const isEnglishSelected = selectedWordIds?.has(englishWordId);
+                const isGreekSelected = selectedWordIds?.has(greekWordId);
 
                 return (
                   <div key={idx} className="inline-flex items-start">
@@ -379,8 +416,25 @@ export function VerseDisplay(props: VerseDisplayProps) {
                           {/* Greek lemma on top */}
                           {lemma && (
                             <span
-                              className="italic text-foreground"
+                              className={`italic text-foreground cursor-grab active:cursor-grabbing ${
+                                isGreekSelected ? "ring-2 ring-primary/60 bg-primary/10 rounded" : ""
+                              }`}
                               style={{ fontSize: lemmaFontSize, fontFamily: baseFont }}
+                              draggable
+                              onDragStart={(event) =>
+                                handleWordDragStart(
+                                  event,
+                                  lemma,
+                                  verse.id,
+                                  "greek",
+                                  greekWordId
+                                )
+                              }
+                              data-lasso-word
+                              data-word-id={greekWordId}
+                              data-word-text={lemma}
+                              data-word-kind="greek"
+                              data-verse-id={verse.id}
                             >
                               {lemma}
                             </span>
@@ -445,11 +499,12 @@ export function VerseDisplay(props: VerseDisplayProps) {
                           {showEnglishWord && (
                             <span
                               className={[
-                                "font-serif rounded transition-colors",
+                                "font-serif rounded transition-colors cursor-grab active:cursor-grabbing",
                                 wordHighlightClass,
                                 strongActive
                                   ? "ring-2 ring-primary/60 bg-primary/10"
                                   : "",
+                                isEnglishSelected ? "ring-2 ring-primary/60 bg-primary/10" : "",
                               ]
                                 .filter(Boolean)
                                 .join(" ")}
@@ -457,6 +512,21 @@ export function VerseDisplay(props: VerseDisplayProps) {
                                 fontSize: englishFontSize,
                                 fontFamily: baseFont,
                               }}
+                              draggable
+                              onDragStart={(event) =>
+                                handleWordDragStart(
+                                  event,
+                                  token.english,
+                                  verse.id,
+                                  "english",
+                                  englishWordId
+                                )
+                              }
+                              data-lasso-word
+                              data-word-id={englishWordId}
+                              data-word-text={token.english}
+                              data-word-kind="english"
+                              data-verse-id={verse.id}
                             >
                               {token.english}
                             </span>
@@ -467,35 +537,11 @@ export function VerseDisplay(props: VerseDisplayProps) {
                         className="w-56 p-2 space-y-2"
                         onOpenAutoFocus={(e) => e.preventDefault()}
                       >
-                        {showNotes && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="w-full justify-start"
-                            onClick={() => onAddWordNote(idx, token.english)}
-                            data-testid={`button-add-word-note-${verse.id}-${idx}`}
-                          >
-                            <StickyNote className="h-3 w-3 mr-2" />
-                            {wordNote ? "View/Edit Note" : "Add Note"}
-                          </Button>
-                        )}
-                        {/* Highlight controls removed */}
+                        {/* Note creation removed */}
                       </PopoverContent>
                     </Popover>
 
-                      {showNotes && wordNote && (
-                        <div
-                          className="text-xs text-muted-foreground bg-muted/50 border rounded px-2 py-1 max-w-[200px]"
-                          data-testid={`word-note-${verse.id}-${idx}`}
-                        >
-                          <div className="flex items-start gap-1">
-                            <StickyNote className="h-3 w-3 text-primary flex-shrink-0 mt-0.5" />
-                            <span className="text-left break-words">
-                              {wordNote.content}
-                            </span>
-                          </div>
-                        </div>
-                      )}
+                      {/* Word note display removed */}
                     </div>
                   </div>
                 );
@@ -512,19 +558,7 @@ export function VerseDisplay(props: VerseDisplayProps) {
           )}
         </div>
 
-        <div className="w-8 flex-shrink-0">
-          {showAddButton && showNotes && (
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-              onClick={onAddNote}
-              data-testid={`button-add-note-${verse.id}`}
-            >
-              <Plus className="h-3 w-3" />
-            </Button>
-          )}
-        </div>
+        <div className="w-8 flex-shrink-0" />
       </div>
     </div>
   );

@@ -32,6 +32,15 @@ export default function BibleReaderExample() {
           fontFamily={fontFamily}
           displayMode={displayMode}
           selectedTranslation={selectedTranslation}
+          onToggleStrongsNumbers={setShowStrongsNumbers}
+          onToggleInterlinear={setShowInterlinear}
+          onToggleStrongsEnglishOnly={setShowStrongsEnglishOnly}
+          onToggleHideAllEnglish={setHideAllEnglish}
+          onToggleNotes={setShowNotes}
+          onFontSizeChange={setFontSize}
+          onFontFamilyChange={setFontFamily}
+          onDisplayModeChange={setDisplayMode}
+          onTranslationChange={setSelectedTranslation}
         />
       </div>
       <div className="w-80 border-l">
