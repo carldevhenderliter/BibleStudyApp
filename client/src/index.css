@@ -313,3 +313,10 @@
     inset: -1px;
   }
 }
+/* Force LTR for block notes editor contenteditable to avoid RTL inheritance. */
+.block-notes-editor [contenteditable="true"] {
+  direction: ltr;
+  unicode-bidi: plaintext;
+  text-align: left;
+  writing-mode: horizontal-tb;
+}

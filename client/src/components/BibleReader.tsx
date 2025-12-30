@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { BlockNotesEditor } from "./BlockNotesEditor";
 import type { DragEvent } from "react";
 import { BibleVerse, Highlight, Note } from "@shared/schema";
 import { VerseDisplay } from "./VerseDisplay";
@@ -28,7 +29,6 @@ import {
   Sun,
   PenTool,
   Highlighter,
-  Type,
   Eraser,
   Settings,
   BookOpen,
@@ -259,6 +259,7 @@ export function BibleReader({
   const [activeNotesVerseId, setActiveNotesVerseId] = useState<string | null>(
     null
   );
+  const [lockedVerseRef, setLockedVerseRef] = useState<string | null>(null);
   const [noteLinkVerseIds, setNoteLinkVerseIds] = useState<string[]>([]);
   const [noteLinkRangeEndVerse, setNoteLinkRangeEndVerse] = useState<number | null>(null);
   const [noteLinkRangeMode, setNoteLinkRangeMode] = useState(false);
@@ -267,6 +268,8 @@ export function BibleReader({
   >("notes");
   const [inkTool, setInkTool] = useState<InkTool>("select");
   const [inkColor, setInkColor] = useState("#facc15");
+  const [penCustomColor, setPenCustomColor] = useState("#facc15");
+  const [highlighterCustomColor, setHighlighterCustomColor] = useState("#facc15");
   const [penSize, setPenSize] = useState(2.5);
   const [highlighterSize, setHighlighterSize] = useState(14);
   const [highlighterOpacity, setHighlighterOpacity] = useState(0.35);
@@ -275,8 +278,6 @@ export function BibleReader({
   const [inkTexts, setInkTexts] = useState<InkText[]>([]);
   const [inkTextBoxes, setInkTextBoxes] = useState<InkTextBox[]>([]);
   const [showInkSettings, setShowInkSettings] = useState(false);
-  const [inkOverlayScrollTop, setInkOverlayScrollTop] = useState(0);
-  const [isInkScrolling, setIsInkScrolling] = useState(false);
   const [bookPopoverOpen, setBookPopoverOpen] = useState(false);
   const [bookPickerBook, setBookPickerBook] = useState(book);
   const [bookPickerChapter, setBookPickerChapter] = useState(chapter);
@@ -321,7 +322,7 @@ export function BibleReader({
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
   const verseContentRef = useRef<HTMLDivElement | null>(null);
   const notesPanelRef = useRef<HTMLDivElement | null>(null);
-  const inkCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const inkSvgRef = useRef<SVGSVGElement | null>(null);
   const lassoStartRef = useRef<InkPoint | null>(null);
   const lassoEndRef = useRef<InkPoint | null>(null);
   const isDrawingRef = useRef(false);
@@ -341,9 +342,10 @@ export function BibleReader({
     startHeight: number;
   } | null>(null);
   const notesPanelResizeRef = useRef<{
-    startX: number;
-    startWidth: number;
+    containerLeft: number;
+    containerWidth: number;
   } | null>(null);
+  const splitPaneRef = useRef<HTMLDivElement | null>(null);
   const stylusTouchActiveRef = useRef(false);
   const pointerInkActiveRef = useRef(false);
   const touchInkActiveRef = useRef(false);
@@ -364,7 +366,20 @@ export function BibleReader({
   const inkStorageKey = "bible-ink";
   const inkTextStorageKey = "bible-ink-texts";
   const [notesPanelWidth, setNotesPanelWidth] = useState<number | null>(null);
+  const [versesPaneWidth, setVersesPaneWidth] = useState<number | null>(null);
   const [isResizingNotesPanel, setIsResizingNotesPanel] = useState(false);
+  const effectiveNotesVerseId = lockedVerseRef ?? activeNotesVerseId;
+  const isNotesLocked = Boolean(lockedVerseRef);
+  const handleNotesLockToggle = useCallback(
+    (nextLocked: boolean) => {
+      if (!nextLocked) {
+        setLockedVerseRef(null);
+        return;
+      }
+      setLockedVerseRef(activeNotesVerseId ?? null);
+    },
+    [activeNotesVerseId]
+  );
   const chapterCountMap = useMemo(() => {
     const map: Record<string, number> = {};
     bibleBooks.forEach(({ name, chapters }) => {
@@ -432,141 +447,7 @@ export function BibleReader({
     );
   }, [activeNotebookId, notebooks]);
 
-  const redrawInk = useCallback(() => {
-    const canvas = inkCanvasRef.current;
-    const vp = scrollViewportRef.current;
-    if (!canvas || !vp) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const dpr = 1;
-    const width = canvas.width / dpr;
-    const height = canvas.height / dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-
-    const scrollTop = vp.scrollTop;
-    const drawSmoothStroke = (stroke: InkStroke, scrollTop: number) => {
-      if (stroke.points.length < 2) return;
-      const points = stroke.points;
-      ctx.beginPath();
-      const start = points[0];
-      ctx.moveTo(start.x, start.y - scrollTop);
-      for (let i = 1; i < points.length - 1; i += 1) {
-        const curr = points[i];
-        const next = points[i + 1];
-        const midX = (curr.x + next.x) / 2;
-        const midY = (curr.y + next.y) / 2;
-        ctx.quadraticCurveTo(curr.x, curr.y - scrollTop, midX, midY - scrollTop);
-      }
-      const last = points[points.length - 1];
-      ctx.lineTo(last.x, last.y - scrollTop);
-      ctx.stroke();
-    };
-
-    for (const stroke of inkStrokesRef.current) {
-      if (stroke.points.length < 2) continue;
-      ctx.globalAlpha = stroke.alpha;
-      ctx.strokeStyle = stroke.color;
-      ctx.lineWidth = stroke.baseWidth;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      if (stroke.tool === "highlighter") {
-        drawSmoothStroke(stroke, scrollTop);
-      } else {
-        ctx.beginPath();
-        stroke.points.forEach((pt, idx) => {
-          const x = pt.x;
-          const y = pt.y - scrollTop;
-          if (idx === 0) {
-            ctx.moveTo(x, y);
-          } else {
-            ctx.lineTo(x, y);
-          }
-        });
-        ctx.stroke();
-      }
-    }
-
-    if (inkTextsRef.current.length > 0) {
-      ctx.fillStyle = "#111827";
-      for (const text of inkTextsRef.current) {
-        ctx.font = `${text.size}px serif`;
-        ctx.fillStyle = text.color;
-        ctx.fillText(text.text, text.x, text.y - scrollTop);
-      }
-    }
-    ctx.globalAlpha = 1;
-  }, []);
-
-  const drawStrokeSegment = useCallback((stroke: InkStroke) => {
-    const canvas = inkCanvasRef.current;
-    const vp = scrollViewportRef.current;
-    if (!canvas || !vp) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    if (stroke.points.length < 2) return;
-    const dpr = 1;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.globalAlpha = stroke.alpha;
-    ctx.strokeStyle = stroke.color;
-    ctx.lineWidth = stroke.baseWidth;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-
-    const lastIndex = stroke.points.length - 1;
-    const prev = stroke.points[lastIndex - 1];
-    const curr = stroke.points[lastIndex];
-    const scrollTop = vp.scrollTop;
-
-    ctx.beginPath();
-    if (stroke.tool === "highlighter" && stroke.points.length >= 3) {
-      const prevPrev = stroke.points[lastIndex - 2];
-      const mid1 = {
-        x: (prevPrev.x + prev.x) / 2,
-        y: (prevPrev.y + prev.y) / 2,
-      };
-      const mid2 = {
-        x: (prev.x + curr.x) / 2,
-        y: (prev.y + curr.y) / 2,
-      };
-      ctx.moveTo(mid1.x, mid1.y - scrollTop);
-      ctx.quadraticCurveTo(prev.x, prev.y - scrollTop, mid2.x, mid2.y - scrollTop);
-    } else {
-      ctx.moveTo(prev.x, prev.y - scrollTop);
-      ctx.lineTo(curr.x, curr.y - scrollTop);
-    }
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }, []);
-
-  const drawStrokeFromIndex = useCallback((stroke: InkStroke, fromIndex: number) => {
-    const canvas = inkCanvasRef.current;
-    const vp = scrollViewportRef.current;
-    if (!canvas || !vp) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const dpr = 1;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.globalAlpha = stroke.alpha;
-    ctx.strokeStyle = stroke.color;
-    ctx.lineWidth = stroke.baseWidth;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-
-    const scrollTop = vp.scrollTop;
-    const points = stroke.points;
-    if (points.length < 2 || fromIndex >= points.length) return;
-    const startIndex = Math.max(1, fromIndex);
-    const start = points[startIndex - 1];
-    ctx.beginPath();
-    ctx.moveTo(start.x, start.y - scrollTop);
-    for (let i = startIndex; i < points.length; i += 1) {
-      const pt = points[i];
-      ctx.lineTo(pt.x, pt.y - scrollTop);
-    }
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }, []);
+  const redrawInk = useCallback(() => {}, []);
 
   const eraseAtPoint = useCallback(
     (inkPoint: InkPoint | null, textBoxPoint?: InkPoint | null) => {
@@ -611,15 +492,9 @@ export function BibleReader({
       }
 
       if (inkPoint && inkTextsRef.current.length > 0) {
-        const canvas = inkCanvasRef.current;
-        const ctx = canvas?.getContext("2d") ?? null;
         const remaining = inkTextsRef.current.filter((text) => {
           const size = Math.max(1, text.size);
           let width = text.text.length * size * 0.6;
-          if (ctx) {
-            ctx.font = `${size}px serif`;
-            width = ctx.measureText(text.text).width;
-          }
           const left = text.x - radius;
           const right = text.x + width + radius;
           const top = text.y - size - radius;
@@ -685,19 +560,30 @@ export function BibleReader({
     []
   );
 
-  const resizeInkCanvas = useCallback(() => {
-    const canvas = inkCanvasRef.current;
-    const vp = scrollViewportRef.current;
-    if (!canvas || !vp) return;
-    const dpr = 1;
-    const width = vp.clientWidth;
-    const height = vp.clientHeight;
-    canvas.width = Math.max(1, Math.floor(width * dpr));
-    canvas.height = Math.max(1, Math.floor(height * dpr));
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-    redrawInk();
-  }, [redrawInk]);
+  const resizeInkCanvas = useCallback(() => {}, []);
+
+  const buildStrokePath = useCallback((stroke: InkStroke) => {
+    const points = stroke.points;
+    if (points.length < 2) return "";
+    if (stroke.tool === "highlighter") {
+      let d = `M ${points[0].x} ${points[0].y}`;
+      for (let i = 1; i < points.length - 1; i += 1) {
+        const curr = points[i];
+        const next = points[i + 1];
+        const midX = (curr.x + next.x) / 2;
+        const midY = (curr.y + next.y) / 2;
+        d += ` Q ${curr.x} ${curr.y} ${midX} ${midY}`;
+      }
+      const last = points[points.length - 1];
+      d += ` L ${last.x} ${last.y}`;
+      return d;
+    }
+    return points.reduce(
+      (path, point, index) =>
+        `${path}${index === 0 ? "M" : "L"} ${point.x} ${point.y} `,
+      ""
+    );
+  }, []);
 
   const flattenChapters = useCallback(
     (stack: { chapter: number; verses: BibleVerseWithTokens[] }[]) =>
@@ -988,16 +874,10 @@ export function BibleReader({
       void loadPrevChapter();
     }
     updateActiveVerseFromScroll();
-    setInkOverlayScrollTop(vp.scrollTop);
     if (inkEnabled) {
       if (inkScrollHideTimeoutRef.current !== null) {
         window.clearTimeout(inkScrollHideTimeoutRef.current);
       }
-      setIsInkScrolling(true);
-      inkScrollHideTimeoutRef.current = window.setTimeout(() => {
-        inkScrollHideTimeoutRef.current = null;
-        setIsInkScrolling(false);
-      }, 80);
       if (isDrawingRef.current) {
         return;
       }
@@ -1071,18 +951,20 @@ export function BibleReader({
   }, [noteLinkRangeEndVerse, verses]);
 
   useEffect(() => {
-    if (!activeNotesVerseId) {
+    if (!effectiveNotesVerseId) {
       setNoteLinkVerseIds([]);
       return;
     }
-    const currentIndex = verses.findIndex((verse) => verse.id === activeNotesVerseId);
+    const currentIndex = verses.findIndex(
+      (verse) => verse.id === effectiveNotesVerseId
+    );
     if (currentIndex === -1) {
-      setNoteLinkVerseIds([activeNotesVerseId]);
+      setNoteLinkVerseIds([effectiveNotesVerseId]);
       return;
     }
     const currentVerseNumber = verses[currentIndex]?.verse ?? 1;
     if (!noteLinkRangeMode) {
-      setNoteLinkVerseIds([activeNotesVerseId]);
+      setNoteLinkVerseIds([effectiveNotesVerseId]);
       return;
     }
     const endVerseNumber = Math.max(
@@ -1097,17 +979,19 @@ export function BibleReader({
     const nextIds = verses
       .slice(currentIndex, resolvedEndIndex + 1)
       .map((verse) => verse.id);
-    setNoteLinkVerseIds(nextIds.length ? nextIds : [activeNotesVerseId]);
-  }, [activeNotesVerseId, noteLinkRangeEndVerse, noteLinkRangeMode, verses]);
+    setNoteLinkVerseIds(nextIds.length ? nextIds : [effectiveNotesVerseId]);
+  }, [effectiveNotesVerseId, noteLinkRangeEndVerse, noteLinkRangeMode, verses]);
 
   useEffect(() => {
-    if (!activeNotesVerseId || noteLinkRangeEndVerse !== null) return;
-    const currentVerse = verses.find((verse) => verse.id === activeNotesVerseId);
+    if (!effectiveNotesVerseId || noteLinkRangeEndVerse !== null) return;
+    const currentVerse = verses.find(
+      (verse) => verse.id === effectiveNotesVerseId
+    );
     if (currentVerse) {
       setNoteLinkRangeEndVerse(currentVerse.verse);
       setNoteLinkRangeMode(false);
     }
-  }, [activeNotesVerseId, noteLinkRangeEndVerse, verses]);
+  }, [effectiveNotesVerseId, noteLinkRangeEndVerse, verses]);
 
   // Load verses + saved highlights/notes
   useEffect(() => {
@@ -1243,7 +1127,6 @@ export function BibleReader({
   useEffect(() => {
     const vp = scrollViewportRef.current;
     if (!vp) return;
-    setInkOverlayScrollTop(vp.scrollTop);
   }, [activeNotebookId, chapterKey]);
 
   useEffect(() => {
@@ -1436,9 +1319,16 @@ export function BibleReader({
     const handlePointerMove = (event: PointerEvent) => {
       const active = notesPanelResizeRef.current;
       if (!active) return;
-      const dx = active.startX - event.clientX;
-      const nextWidth = Math.max(240, Math.min(720, active.startWidth + dx));
-      setNotesPanelWidth(nextWidth);
+      const minRight = 240;
+      const maxRight = Math.min(720, active.containerWidth * 0.6);
+      const minLeft = Math.max(320, active.containerWidth - maxRight);
+      const leftWidth = Math.min(
+        Math.max(event.clientX - active.containerLeft, minLeft),
+        active.containerWidth - minRight
+      );
+      const rightWidth = active.containerWidth - leftWidth;
+      setVersesPaneWidth(leftWidth);
+      setNotesPanelWidth(rightWidth);
     };
 
     const handlePointerUp = () => {
@@ -1803,33 +1693,31 @@ export function BibleReader({
   };
 
   const getInkPointFromEvent = (event: PointerEvent) => {
-    const canvas = inkCanvasRef.current;
-    const vp = scrollViewportRef.current;
-    if (!canvas || !vp) return null;
-    const rect = inkRectRef.current ?? canvas.getBoundingClientRect();
+    const surface = inkSvgRef.current;
+    if (!surface) return null;
+    const rect = inkRectRef.current ?? surface.getBoundingClientRect();
     return {
       x: event.clientX - rect.left,
-      y: event.clientY - rect.top + vp.scrollTop,
+      y: event.clientY - rect.top,
       pressure: undefined,
     };
   };
 
   const getInkPointFromTouch = (touch: TouchLike) => {
-    const canvas = inkCanvasRef.current;
-    const vp = scrollViewportRef.current;
-    if (!canvas || !vp) return null;
-    const rect = inkRectRef.current ?? canvas.getBoundingClientRect();
+    const surface = inkSvgRef.current;
+    if (!surface) return null;
+    const rect = inkRectRef.current ?? surface.getBoundingClientRect();
     return {
       x: touch.clientX - rect.left,
-      y: touch.clientY - rect.top + vp.scrollTop,
+      y: touch.clientY - rect.top,
       pressure: undefined,
     };
   };
 
   const getInkViewportPointFromEvent = (event: PointerEvent) => {
-    const canvas = inkCanvasRef.current;
-    if (!canvas) return null;
-    const rect = inkRectRef.current ?? canvas.getBoundingClientRect();
+    const vp = scrollViewportRef.current;
+    if (!vp) return null;
+    const rect = vp.getBoundingClientRect();
     return {
       x: event.clientX - rect.left,
       y: event.clientY - rect.top,
@@ -1838,9 +1726,9 @@ export function BibleReader({
   };
 
   const getInkViewportPointFromTouch = (touch: TouchLike) => {
-    const canvas = inkCanvasRef.current;
-    if (!canvas) return null;
-    const rect = inkRectRef.current ?? canvas.getBoundingClientRect();
+    const vp = scrollViewportRef.current;
+    if (!vp) return null;
+    const rect = vp.getBoundingClientRect();
     return {
       x: touch.clientX - rect.left,
       y: touch.clientY - rect.top,
@@ -1988,7 +1876,7 @@ export function BibleReader({
         return;
       }
 
-      const targetVerseId = verseId ?? activeNotesVerseId;
+      const targetVerseId = verseId ?? effectiveNotesVerseId;
       if (!targetVerseId) return;
 
       const boxWidth = Math.max(160, Math.min(320, droppedText.length * 10));
@@ -2026,7 +1914,7 @@ export function BibleReader({
         setActiveNotesVerseId(targetVerseId);
       }
     },
-    [activeNotesVerseId, inkColor, penSize, redrawInk]
+    [activeNotesVerseId, effectiveNotesVerseId, inkColor, penSize, redrawInk]
   );
 
   const handleNotesDrop = useCallback(
@@ -2179,8 +2067,8 @@ export function BibleReader({
     const linkIds =
       noteLinkVerseIds.length > 0
         ? noteLinkVerseIds
-        : activeNotesVerseId
-          ? [activeNotesVerseId]
+        : effectiveNotesVerseId
+          ? [effectiveNotesVerseId]
           : [];
     if (!linkIds.length) {
       return;
@@ -2326,10 +2214,10 @@ export function BibleReader({
     last.points.push(point);
     inkStrokesRef.current = strokes;
     activeStrokeRef.current = last;
-    drawStrokeSegment(last);
     if (rafRef.current === null) {
       rafRef.current = window.requestAnimationFrame(() => {
         rafRef.current = null;
+        setInkStrokes([...inkStrokesRef.current]);
       });
     }
   };
@@ -2380,16 +2268,15 @@ export function BibleReader({
     event.stopPropagation();
     pointerInkActiveRef.current = true;
     setInkScrollLock(true);
-    const vp = scrollViewportRef.current;
-    if (vp) {
+    const surface = inkSvgRef.current;
+    if (surface) {
       try {
-        vp.setPointerCapture(event.pointerId);
+        surface.setPointerCapture(event.pointerId);
       } catch {
         // Ignore capture errors on unsupported browsers.
       }
     }
-    const canvas = inkCanvasRef.current;
-    inkRectRef.current = canvas ? canvas.getBoundingClientRect() : null;
+    inkRectRef.current = surface ? surface.getBoundingClientRect() : null;
     const point =
       inkTool === "textbox"
         ? getTextBoxPointFromEvent(event)
@@ -2440,10 +2327,10 @@ export function BibleReader({
     event.stopPropagation();
     pointerInkActiveRef.current = false;
     setInkScrollLock(false);
-    const vp = scrollViewportRef.current;
-    if (vp) {
+    const surface = inkSvgRef.current;
+    if (surface) {
       try {
-        vp.releasePointerCapture(event.pointerId);
+        surface.releasePointerCapture(event.pointerId);
       } catch {
         // Ignore capture errors on unsupported browsers.
       }
@@ -2497,8 +2384,8 @@ export function BibleReader({
   };
 
   useEffect(() => {
-    const vp = scrollViewportRef.current;
-    if (!vp) return;
+    const surface = inkSvgRef.current;
+    if (!surface) return;
 
     const onPointerDown = (event: PointerEvent) => handleInkPointerDown(event);
     const onPointerMove = (event: PointerEvent) => handleInkPointerMove(event);
@@ -2516,8 +2403,8 @@ export function BibleReader({
         inkTool === "textbox" ? event.changedTouches[0] : getStylusTouchFromEvent(event);
       stylusTouchIdRef.current = stylusTouch ? stylusTouch.identifier : null;
       setInkScrollLock(true);
-      const canvas = inkCanvasRef.current;
-      inkRectRef.current = canvas ? canvas.getBoundingClientRect() : null;
+      const surface = inkSvgRef.current;
+      inkRectRef.current = surface ? surface.getBoundingClientRect() : null;
       const touch = stylusTouch ?? getTouchById(event, stylusTouchIdRef.current);
       const point = touch
         ? inkTool === "textbox"
@@ -2644,12 +2531,12 @@ export function BibleReader({
       }
     };
 
-    vp.addEventListener("pointerdown", onPointerDown, { passive: false });
-    vp.addEventListener("pointermove", onPointerMove, { passive: false });
-    vp.addEventListener("touchstart", onTouchStart, { passive: false, capture: true });
-    vp.addEventListener("touchmove", onTouchMove, { passive: false, capture: true });
-    vp.addEventListener("touchend", onTouchEnd, { passive: true });
-    vp.addEventListener("touchcancel", onTouchEnd, { passive: true });
+    surface.addEventListener("pointerdown", onPointerDown, { passive: false });
+    surface.addEventListener("pointermove", onPointerMove, { passive: false });
+    surface.addEventListener("touchstart", onTouchStart, { passive: false, capture: true });
+    surface.addEventListener("touchmove", onTouchMove, { passive: false, capture: true });
+    surface.addEventListener("touchend", onTouchEnd, { passive: true });
+    surface.addEventListener("touchcancel", onTouchEnd, { passive: true });
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerUp);
     window.addEventListener("touchmove", onWindowTouchMove, { passive: false });
@@ -2657,19 +2544,19 @@ export function BibleReader({
     window.addEventListener("touchcancel", onWindowTouchEnd, { passive: true });
 
     return () => {
-      vp.removeEventListener("pointerdown", onPointerDown);
-      vp.removeEventListener("pointermove", onPointerMove);
-      vp.removeEventListener("touchstart", onTouchStart, { capture: true } as AddEventListenerOptions);
-      vp.removeEventListener("touchmove", onTouchMove, { capture: true } as AddEventListenerOptions);
-      vp.removeEventListener("touchend", onTouchEnd);
-      vp.removeEventListener("touchcancel", onTouchEnd);
+      surface.removeEventListener("pointerdown", onPointerDown);
+      surface.removeEventListener("pointermove", onPointerMove);
+      surface.removeEventListener("touchstart", onTouchStart, { capture: true } as AddEventListenerOptions);
+      surface.removeEventListener("touchmove", onTouchMove, { capture: true } as AddEventListenerOptions);
+      surface.removeEventListener("touchend", onTouchEnd);
+      surface.removeEventListener("touchcancel", onTouchEnd);
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
       window.removeEventListener("touchmove", onWindowTouchMove);
       window.removeEventListener("touchend", onWindowTouchEnd);
       window.removeEventListener("touchcancel", onWindowTouchEnd);
     };
-  }, [handleInkPointerDown, handleInkPointerMove, handleInkPointerUp, inkEnabled]);
+  }, [handleInkPointerDown, handleInkPointerMove, handleInkPointerUp, inkEnabled, inkTool]);
 
 
   useEffect(() => {
@@ -2924,12 +2811,19 @@ export function BibleReader({
     }
   }
 
-  const panelVerseId = addingNote?.verseId ?? activeNotesVerseId;
+  const panelVerseId = addingNote?.verseId ?? effectiveNotesVerseId;
   const verseById = useMemo(() => {
     const map = new Map<string, BibleVerseWithTokens>();
     verses.forEach((v) => map.set(v.id, v));
     return map;
   }, [verses]);
+  const lockedVerseRefDisplay = useMemo(() => {
+    if (!lockedVerseRef) return "";
+    const lockedVerse = verseById.get(lockedVerseRef);
+    return lockedVerse
+      ? `${lockedVerse.book} ${lockedVerse.chapter}:${lockedVerse.verse}`
+      : "";
+  }, [lockedVerseRef, verseById]);
 
   const rangeGroups = useMemo(
     () => Array.from(rangeNoteMap.values()),
@@ -2979,14 +2873,27 @@ export function BibleReader({
   const panelVerseRef = panelVerse
     ? `${panelVerse.book} ${panelVerse.chapter}:${panelVerse.verse}`
     : "";
+  const activePanelNote = useMemo(() => {
+    if (rangeNoteForPanel) return rangeNoteForPanel;
+    if (verseNotesForPanel.length > 0) return verseNotesForPanel[0] ?? null;
+    if (wordNotesForPanel.length > 0) return wordNotesForPanel[0] ?? null;
+    return null;
+  }, [rangeNoteForPanel, verseNotesForPanel, wordNotesForPanel]);
+  const [panelNoteContent, setPanelNoteContent] = useState(
+    activePanelNote?.content ?? ""
+  );
+  useEffect(() => {
+    const nextContent = activePanelNote?.content ?? "";
+    setPanelNoteContent(nextContent);
+  }, [activePanelNote?.id]);
   const noteLinkStartVerseNumber = useMemo(() => {
-    if (!activeNotesVerseId) return 1;
-    const current = verses.find((verse) => verse.id === activeNotesVerseId);
+    if (!effectiveNotesVerseId) return 1;
+    const current = verses.find((verse) => verse.id === effectiveNotesVerseId);
     return current?.verse ?? 1;
-  }, [activeNotesVerseId, verses]);
+  }, [effectiveNotesVerseId, verses]);
   const noteLinkRangeDisplay = useMemo(() => {
-    if (!activeNotesVerseId) return "Link range";
-    const startVerse = verses.find((verse) => verse.id === activeNotesVerseId);
+    if (!effectiveNotesVerseId) return "Link range";
+    const startVerse = verses.find((verse) => verse.id === effectiveNotesVerseId);
     if (!startVerse) return "Link range";
     const endVerseNumber = noteLinkRangeEndVerse ?? startVerse.verse;
     const inRange = noteLinkRangeMode && endVerseNumber >= startVerse.verse;
@@ -2994,11 +2901,11 @@ export function BibleReader({
     return inRange
       ? `${startVerse.book} ${startVerse.chapter}:${startVerse.verse}-${resolvedEndVerse}`
       : `${startVerse.book} ${startVerse.chapter}:${startVerse.verse}`;
-  }, [activeNotesVerseId, noteLinkRangeEndVerse, noteLinkRangeMode, verses]);
+  }, [effectiveNotesVerseId, noteLinkRangeEndVerse, noteLinkRangeMode, verses]);
   const noteLinkRangeOptions = useMemo(() => {
-    if (!activeNotesVerseId) return [];
+    if (!effectiveNotesVerseId) return [];
     const currentIndex = verses.findIndex(
-      (verse) => verse.id === activeNotesVerseId
+      (verse) => verse.id === effectiveNotesVerseId
     );
     if (currentIndex === -1) return [];
     const startVerse = verses[currentIndex];
@@ -3007,7 +2914,7 @@ export function BibleReader({
       value: verse.verse,
       label: `${verse.verse}`,
     }));
-  }, [activeNotesVerseId, verses]);
+  }, [effectiveNotesVerseId, verses]);
   const firstNewTestamentIndex = useMemo(
     () => bibleBooks.findIndex((entry) => entry.name === "Matthew"),
     []
@@ -3065,23 +2972,6 @@ export function BibleReader({
       onNavigate(nextBook.name, 1);
     }
   };
-  const visibleInkTextBoxes = useMemo(() => {
-    if (!activeNotesVerseId) return [];
-    return inkTextBoxes.filter((box) => {
-      const mode = box.noteMode ?? "single";
-      if (noteLinkRangeMode && mode !== "range") return false;
-      if (!noteLinkRangeMode && mode !== "single") return false;
-      return box.verseIds.includes(activeNotesVerseId);
-    });
-  }, [activeNotesVerseId, inkTextBoxes, noteLinkRangeMode]);
-  const notesScrollHeight = useMemo(() => {
-    if (!visibleInkTextBoxes.length) return 1;
-    return (
-      Math.max(
-        ...visibleInkTextBoxes.map((box) => box.y + box.height + 24)
-      ) || 1
-    );
-  }, [visibleInkTextBoxes]);
   const lassoSelectedWordIds = useMemo(() => {
     return new Set(lassoSelectedWords.map((word) => word.id));
   }, [lassoSelectedWords]);
@@ -3216,9 +3106,70 @@ export function BibleReader({
                       : "var(--font-sans)",
             }}
           >
+          {inkEnabled && (
+            <>
+              <svg
+                className="pointer-events-none absolute inset-0 z-0 h-full w-full"
+                aria-hidden="true"
+              >
+                {inkStrokes.map((stroke) => {
+                  if (stroke.tool !== "highlighter" || stroke.points.length < 2) return null;
+                  return (
+                    <path
+                      key={stroke.id}
+                      d={buildStrokePath(stroke)}
+                      fill="none"
+                      stroke={stroke.color}
+                      strokeWidth={stroke.baseWidth}
+                      strokeOpacity={stroke.alpha}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  );
+                })}
+              </svg>
+              <svg
+                ref={inkSvgRef}
+                className={`absolute inset-0 z-20 h-full w-full ${
+                  inkEnabled && inkTool !== "select" && inkTool !== "lasso"
+                    ? "pointer-events-auto"
+                    : "pointer-events-none"
+                }`}
+                aria-hidden="true"
+              >
+                {inkStrokes.map((stroke) => {
+                  if (stroke.tool === "highlighter" || stroke.points.length < 2) return null;
+                  return (
+                    <path
+                      key={stroke.id}
+                      d={buildStrokePath(stroke)}
+                      fill="none"
+                      stroke={stroke.color}
+                      strokeWidth={stroke.baseWidth}
+                      strokeOpacity={stroke.alpha}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  );
+                })}
+                {inkTexts.map((text) => (
+                  <text
+                    key={text.id}
+                    x={text.x}
+                    y={text.y}
+                    fill={text.color}
+                    fontSize={text.size}
+                    fontFamily="serif"
+                  >
+                    {text.text}
+                  </text>
+                ))}
+              </svg>
+            </>
+          )}
           {lassoRect && (
             <div
-              className="pointer-events-none absolute z-20 rounded-md border border-primary/60 bg-primary/10"
+              className="pointer-events-none absolute z-30 rounded-md border border-primary/60 bg-primary/10"
               style={{
                 left: lassoRect.x,
                 top: lassoRect.y,
@@ -3229,7 +3180,7 @@ export function BibleReader({
           )}
           {inkTool === "lasso" && lassoSelectedPayload && lassoSelectionBounds && (
             <div
-              className="absolute z-20"
+              className="absolute z-30"
               style={{
                 left: lassoSelectionBounds.x,
                 top: Math.max(0, lassoSelectionBounds.y - 28),
@@ -3246,9 +3197,17 @@ export function BibleReader({
               </button>
             </div>
           )}
-          <div className="md:flex md:items-start md:gap-6">
+          <div
+            ref={splitPaneRef}
+            className="relative z-10 md:flex md:items-start md:gap-6 w-full max-w-[100vw]"
+          >
             {/* Right: verses */}
-            <div className="flex-1 min-w-[50%]">
+            <div
+              className="flex-1 min-w-0"
+              style={
+                versesPaneWidth ? { flexBasis: versesPaneWidth, width: versesPaneWidth } : undefined
+              }
+            >
               {verses.map((verse) => {
             // If this verse is only part of a range and NOT the anchor, skip it
             if (
@@ -3546,8 +3505,8 @@ export function BibleReader({
             </div>
 
             {showNotes && (
-              <div className="flex items-start gap-3 md:sticky md:top-0 self-start">
-                <div className="flex flex-col items-center gap-2 rounded-full border border-border/60 bg-background/80 px-1.5 py-2 shadow-sm backdrop-blur">
+              <div className="flex min-w-0 items-start gap-3 self-start md:sticky md:top-0">
+                <div className="flex min-w-0 flex-col items-center gap-2 rounded-full border border-border/60 bg-background/80 px-1.5 py-2 shadow-sm backdrop-blur">
                   <button
                     type="button"
                     className={`rounded-full border px-2 py-2 text-[10px] uppercase tracking-[0.2em] transition [writing-mode:vertical-rl] ${
@@ -3588,8 +3547,13 @@ export function BibleReader({
                 </div>
                 <div
                   ref={notesPanelRef}
-                  className="relative mt-0 md:mt-0 md:w-[320px] lg:w-[380px] h-[calc(100vh-220px)] max-h-[calc(100vh-220px)] pr-2 space-y-3 min-w-[240px] max-w-[720px] overflow-visible"
-                  style={notesPanelWidth ? { width: notesPanelWidth } : undefined}
+                  className="relative mt-0 h-[calc(100vh-220px)] max-h-[calc(100vh-220px)] min-w-0 min-w-[240px] max-w-[60vw] space-y-3 overflow-y-auto overflow-x-hidden pr-2 md:mt-0 md:w-[320px] md:sticky md:top-0 md:h-screen md:max-h-screen lg:w-[380px]"
+                  dir="ltr"
+                  style={
+                    notesPanelWidth
+                      ? { flexBasis: notesPanelWidth, width: notesPanelWidth }
+                      : undefined
+                  }
                 >
                   <div
                     className="absolute left-0 top-1/2 z-10 h-14 w-4 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-full border border-border bg-background shadow"
@@ -3597,18 +3561,44 @@ export function BibleReader({
                     onPointerDown={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    const panel = notesPanelRef.current;
-                    if (!panel) return;
+                    const container = splitPaneRef.current;
+                    if (!container) return;
+                    const rect = container.getBoundingClientRect();
                     setIsResizingNotesPanel(true);
                     notesPanelResizeRef.current = {
-                      startX: e.clientX,
-                      startWidth: panel.getBoundingClientRect().width,
+                      containerLeft: rect.left,
+                      containerWidth: rect.width,
                     };
                   }}
                 />
                 {notesPanelTab === "notes" && (
                   <>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="sticky top-0 z-20 -mx-2 mb-2 bg-background/95 px-2 py-2 backdrop-blur">
+                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-2 rounded-full border border-border/70 bg-background/90 px-2 py-0.5 text-[11px] shadow-sm">
+                        <span
+                          className={!isNotesLocked ? "text-foreground" : "text-muted-foreground"}
+                        >
+                          Follow
+                        </span>
+                        <Switch
+                          id="notes-follow-lock"
+                          checked={isNotesLocked}
+                          onCheckedChange={handleNotesLockToggle}
+                          disabled={!activeNotesVerseId}
+                          aria-label="Toggle notes follow lock"
+                        />
+                        <span
+                          className={isNotesLocked ? "text-foreground" : "text-muted-foreground"}
+                        >
+                          Lock
+                        </span>
+                      </div>
+                      {isNotesLocked && lockedVerseRefDisplay && (
+                        <span className="text-[10px] text-muted-foreground">
+                          Locked to {lockedVerseRefDisplay}
+                        </span>
+                      )}
                       <div className="flex rounded-full border border-border/70 bg-background/90 text-[10px] text-muted-foreground shadow-sm">
                         <button
                           type="button"
@@ -3703,76 +3693,61 @@ export function BibleReader({
                       >
                         New
                       </button>
+                      </div>
                     </div>
-                    <div
-                      ref={notesAreaRef}
-                      className={`relative h-full rounded-xl border border-dashed border-border/70 bg-card/50 px-3 py-3 ${isResizingNotesPanel ? "overflow-hidden" : "overflow-y-auto"}`}
-                      onDragOver={handleNotesDragOver}
-                      onDrop={handleNotesDrop}
-                    >
-                      <div
-                        className="min-h-full"
-                        style={{ height: notesScrollHeight }}
-                      />
-                      <div className="absolute inset-0 pointer-events-none">
-                        {visibleInkTextBoxes.map((box) => (
-                          <div
-                            key={box.id}
-                            data-ink-textbox
-                            className="absolute pointer-events-auto border border-primary/60 bg-transparent"
-                            style={{
-                              left: box.x,
-                              top: box.y,
-                              width: box.width,
-                              height: box.height,
-                              borderWidth: box.borderWidth,
-                              touchAction: "pan-y",
-                            }}
-                          >
-                            <textarea
-                              className="h-full w-full resize-none bg-transparent px-2 py-1 text-foreground outline-none"
-                              readOnly={!box.isEditing}
-                              style={{ touchAction: "pan-y" }}
-                              value={box.text}
-                              onChange={(e) =>
-                                updateTextBoxById(box.id, (current) => ({
-                                  ...current,
-                                  text: e.target.value,
-                                }))
+                    <div className="relative h-full rounded-xl border border-border/70 bg-card/50 px-3 py-3 overflow-y-auto">
+                      <div className="rounded border border-border bg-background px-2 py-2">
+                        <BlockNotesEditor
+                          value={panelNoteContent}
+                          onChange={setPanelNoteContent}
+                          placeholder="Start a note or type / for blocks"
+                        />
+                      </div>
+                      <div className="mt-2 text-[11px] text-muted-foreground">
+                        Slash commands: /h1 /h2 /h3 /quote /p /v John 1:1
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span>
+                          {activePanelNote
+                            ? `Editing note for ${panelVerseRef || "current verse"}`
+                            : addingNote
+                              ? `New note for ${panelVerseRef || "current verse"}`
+                              : "No note selected"}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className="rounded border border-border px-2 py-1 text-[11px] hover:bg-accent/60"
+                            onClick={() => {
+                              if (activePanelNote) {
+                                handleUpdateNote(activePanelNote.id, panelNoteContent);
+                                return;
                               }
-                            />
+                              if (addingNote?.wordIndex !== undefined) {
+                                handleSaveWordNote(
+                                  addingNote.wordIndex,
+                                  panelNoteContent
+                                );
+                                return;
+                              }
+                              if (addingNote?.verseId) {
+                                handleSaveNote(panelNoteContent);
+                              }
+                            }}
+                            disabled={!panelNoteContent.trim()}
+                          >
+                            Save
+                          </button>
+                          {addingNote && (
                             <button
                               type="button"
-                              className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-border bg-background/90 px-2 py-0.5 text-[10px] text-muted-foreground shadow"
-                              onClick={() =>
-                                updateTextBoxById(box.id, (current) => ({
-                                  ...current,
-                                  isEditing: !current.isEditing,
-                                }))
-                              }
+                              className="rounded border border-border px-2 py-1 text-[11px] hover:bg-accent/60"
+                              onClick={() => setAddingNote(null)}
                             >
-                              {box.isEditing ? "Done" : "Edit"}
+                              Cancel
                             </button>
-                            {box.isEditing && (
-                              <div
-                                className="absolute -left-2 top-1/2 h-4 w-4 -translate-y-1/2 cursor-ew-resize rounded-full border border-border bg-background shadow"
-                                style={{ touchAction: "none" }}
-                                onPointerDown={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  textBoxResizeRef.current = {
-                                    id: box.id,
-                                    startX: e.clientX,
-                                    startY: e.clientY,
-                                    startLeft: box.x,
-                                    startWidth: box.width,
-                                    startHeight: box.height,
-                                  };
-                                }}
-                              />
-                            )}
-                          </div>
-                        ))}
+                          )}
+                        </div>
                       </div>
                     </div>
                   </>
@@ -3893,14 +3868,6 @@ export function BibleReader({
           </div>
           </div>
         </ScrollArea>
-        {inkEnabled && (
-          <canvas
-            ref={inkCanvasRef}
-            className={`absolute inset-0 z-0 pointer-events-none ${
-              isInkScrolling ? "opacity-0" : "opacity-100"
-            }`}
-          />
-        )}
         {inkEnabled && inkTool === "eraser" && (
           <div className="absolute inset-0 z-20 pointer-events-none">
             <div
@@ -3944,6 +3911,36 @@ export function BibleReader({
                         aria-label={`Ink color ${color.name}`}
                       />
                     ))}
+                    {(inkTool === "pen" || inkTool === "highlighter") && (
+                      <label
+                        className={`relative h-6 w-6 rounded-full border transition-all ${
+                          inkColor ===
+                          (inkTool === "pen" ? penCustomColor : highlighterCustomColor)
+                            ? "border-foreground shadow-md scale-110"
+                            : "border-transparent hover:scale-105"
+                        }`}
+                        style={{
+                          backgroundColor:
+                            inkTool === "pen" ? penCustomColor : highlighterCustomColor,
+                        }}
+                        aria-label="Custom ink color"
+                      >
+                        <input
+                          type="color"
+                          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                          value={inkTool === "pen" ? penCustomColor : highlighterCustomColor}
+                          onChange={(e) => {
+                            const next = e.target.value;
+                            if (inkTool === "pen") {
+                              setPenCustomColor(next);
+                            } else {
+                              setHighlighterCustomColor(next);
+                            }
+                            setInkColor(next);
+                          }}
+                        />
+                      </label>
+                    )}
                   </div>
                 )}
                 <div className="mt-2 flex flex-wrap items-center justify-center gap-3 text-[10px] md:text-xs">
@@ -4074,21 +4071,6 @@ export function BibleReader({
               aria-label="Highlighter tool"
             >
               <Highlighter className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              className={`h-9 w-9 rounded-full border transition-colors flex items-center justify-center ${
-                inkTool === "textbox"
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border hover:border-primary/60 hover:bg-accent/40"
-              }`}
-              onClick={() => {
-                setInkTool("textbox");
-                setShowInkSettings(true);
-              }}
-              aria-label="Text box tool"
-            >
-              <Type className="h-4 w-4" />
             </button>
             <button
               type="button"

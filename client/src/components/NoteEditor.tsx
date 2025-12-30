@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Note } from "@shared/schema";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { X, Trash2, Pencil } from "lucide-react";
+import { BlockNotesEditor } from "./BlockNotesEditor";
 
 export type NoteTheme =
   | "yellow"
@@ -85,7 +85,6 @@ export function NoteEditor({
 
   // NEW: view vs edit mode
   const [isEditing, setIsEditing] = useState<boolean>(startInEditMode);
-
   // When the note prop changes (open a different note), sync local state
   useEffect(() => {
     if (note) {
@@ -390,15 +389,18 @@ export function NoteEditor({
         </div>
       )}
 
-      {/* Textarea */}
-      <Textarea
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        rows={5}
-        placeholder="Write your note…"
-        className="mb-2 text-sm"
-        style={contentStyle}
-      />
+      <div className="mb-2">
+        <div className="rounded border border-border bg-background px-2 py-1">
+          <BlockNotesEditor
+            value={content}
+            onChange={setContent}
+            placeholder="Start a note or type / for blocks"
+          />
+        </div>
+        <div className="mt-2 text-[11px] text-muted-foreground">
+          Slash commands: /h1 /h2 /h3 /quote /p /v John 1:1
+        </div>
+      </div>
 
       {/* Cross references (input) */}
       <div className="mb-2">
