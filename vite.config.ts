@@ -5,10 +5,19 @@ import { resolve } from "node:path";
 
 // Standard ESM-friendly __dirname replacement
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const rawBasePath = process.env.BASE_PATH ?? "/";
+const normalizedBasePath =
+  rawBasePath === "/"
+    ? "/"
+    : `/${rawBasePath.replace(/^\/+|\/+$/g, "")}/`;
 
 export default defineConfig({
-  // 👇 Use repo base in prod, root in dev for local runs
-  base: process.env.NODE_ENV === "production" ? "/BibleStudyApp/" : "/",
+  base:
+    process.env.NODE_ENV === "production"
+      ? normalizedBasePath
+      : rawBasePath === "/"
+        ? "/"
+        : normalizedBasePath,
 
   plugins: [
     react(),

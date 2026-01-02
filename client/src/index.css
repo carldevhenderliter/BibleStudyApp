@@ -239,9 +239,13 @@
   /* .no-default-hover-elevate/no-default-active-elevate is an escape hatch so consumers of
    * buttons/badges can remove the automatic brightness adjustment on interactions
    * and program their own. */
-  .no-default-hover-elevate {}
+  .no-default-hover-elevate {
+    --no-default-hover-elevate: 1;
+  }
 
-  .no-default-active-elevate {}
+  .no-default-active-elevate {
+    --no-default-active-elevate: 1;
+  }
 
 
   /**
@@ -314,9 +318,25 @@
   }
 }
 /* Force LTR for block notes editor contenteditable to avoid RTL inheritance. */
+.block-notes-editor,
+.block-notes-editor * {
+  direction: ltr !important;
+  unicode-bidi: bidi-override !important;
+  text-align: left !important;
+  writing-mode: horizontal-tb !important;
+}
+
 .block-notes-editor [contenteditable="true"] {
-  direction: ltr;
-  unicode-bidi: plaintext;
-  text-align: left;
-  writing-mode: horizontal-tb;
+  direction: ltr !important;
+  unicode-bidi: bidi-override !important;
+  text-align: left !important;
+  writing-mode: horizontal-tb !important;
+}
+
+.block-notes-editor--ios,
+.block-notes-editor--ios * {
+  direction: ltr !important;
+  unicode-bidi: bidi-override !important;
+  text-align: left !important;
+  writing-mode: horizontal-tb !important;
 }

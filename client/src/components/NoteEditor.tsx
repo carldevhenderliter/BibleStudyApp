@@ -395,6 +395,7 @@ export function NoteEditor({
             value={content}
             onChange={setContent}
             placeholder="Start a note or type / for blocks"
+            translation="KJV"
           />
         </div>
         <div className="mt-2 text-[11px] text-muted-foreground">

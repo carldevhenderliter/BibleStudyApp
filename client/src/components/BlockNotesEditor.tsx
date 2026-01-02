@@ -1,12 +1,20 @@
 import {
+  forwardRef,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent,
 } from "react";
 import { createPortal } from "react-dom";
+import {
+  getVersesByChapter,
+  bibleBooks,
+  type Translation,
+  type BibleVerseWithTokens,
+} from "@/lib/bibleData";
 
 type BlockType =
   | "paragraph"
@@ -15,7 +23,8 @@ type BlockType =
   | "heading3"
   | "quote"
   | "bullet"
-  | "ordered";
+  | "ordered"
+  | "verse";
 
 type AlignType = "left" | "center" | "right";
 
@@ -23,6 +32,8 @@ type Block = {
   id: string;
   type: BlockType;
   text: string;
+  linkedVerseId?: string;
+  isVerseCollapsed?: boolean;
   bgColor?: string | null;
   textColor?: string | null;
   fontSize?: number | null;
@@ -30,6 +41,8 @@ type Block = {
   isItalic?: boolean;
   isUnderline?: boolean;
   align?: AlignType;
+  verseRefs?: { book: string; chapter: number; verse: number; endVerse?: number }[];
+  verseText?: string;
 };
 
 type SlashItem = {
@@ -44,9 +57,38 @@ type BlockNotesEditorProps = {
   value: string;
   onChange: (next: string) => void;
   placeholder?: string;
+  translation?: Translation;
+  onUserEdit?: () => void;
+  onUserBlur?: () => void;
+  onFocusChange?: (focused: boolean) => void;
+  onFocusedBlockStyleChange?: (style: FocusedBlockStyle | null) => void;
 };
 
+export type FocusedBlockStyle = {
+  type: BlockType;
+  isBold?: boolean;
+  isItalic?: boolean;
+  isUnderline?: boolean;
+  bgColor?: string | null;
+};
+
+export type NotesFormatCommand =
+  | { type: "setBlockType"; blockType: BlockType }
+  | { type: "toggleBold" }
+  | { type: "toggleItalic" }
+  | { type: "toggleUnderline" }
+  | { type: "setBlockColor"; color: string | null };
+
+export type BlockNotesEditorHandle = {
+  applyFormat: (command: NotesFormatCommand) => void;
+};
+
+export const NOTE_BLOCK_COLORS = ["#fde68a", "#bfdbfe", "#bbf7d0"];
+
 const buildId = () => `block-${Math.random().toString(36).slice(2, 9)}`;
+
+const encodeAttr = (value: string) => encodeURIComponent(value);
+const decodeAttr = (value: string | null) => (value ? decodeURIComponent(value) : null);
 
 const escapeHtml = (value: string) =>
   value
@@ -73,6 +115,15 @@ const blockToHtml = (block: Block) => {
   const text = escapeHtml(block.text).replace(/\n/g, "<br>");
   const colorAttr = buildColorAttrs(block);
   switch (block.type) {
+    case "verse": {
+      const refsAttr = block.verseRefs
+        ? ` data-block-refs="${encodeAttr(JSON.stringify(block.verseRefs))}"`
+        : "";
+      const verseAttr = block.verseText
+        ? ` data-block-verse="${encodeAttr(block.verseText)}"`
+        : "";
+      return `<div data-block-type="verse"${refsAttr}${verseAttr}></div>`;
+    }
     case "heading1":
       return `<h1${colorAttr}>${text}</h1>`;
     case "heading2":
@@ -92,12 +143,33 @@ const blockToHtml = (block: Block) => {
 
 const blocksToHtml = (blocks: Block[]) => blocks.map(blockToHtml).join("");
 
+const LTR_ISOLATE = "\u2066";
+const LTR_PDI = "\u2069";
+
+const stripLtrMarkers = (value: string) =>
+  value.replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, "");
+
+const applyLtrMarkers = (value: string) => {
+  if (!value) return "";
+  const cleaned = stripLtrMarkers(value);
+  return `${LTR_ISOLATE}${cleaned}${LTR_PDI}`;
+};
+
+const toDomOffset = (value: string, rawOffset: number, hasMarkers: boolean) => {
+  if (!value) return 0;
+  const clampedOffset = Math.max(0, Math.min(rawOffset, value.length));
+  return clampedOffset + (hasMarkers ? 1 : 0);
+};
+
 const normalizeText = (node: Element) => {
   const raw =
     "innerText" in node
       ? (node as HTMLElement).innerText
       : node.textContent ?? "";
-  return raw.replace(/\r/g, "").replace(/\n+$/g, "");
+  return raw
+    .replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, "")
+    .replace(/\r/g, "")
+    .replace(/\n+$/g, "");
 };
 
 const parseBlocksFromHtml = (html: string): Block[] => {
@@ -132,6 +204,7 @@ const parseBlocksFromHtml = (html: string): Block[] => {
 
   Array.from(body.children).forEach((el) => {
     const tag = el.tagName.toLowerCase();
+    const blockType = el.getAttribute("data-block-type");
     const baseBg = el.getAttribute("data-block-bg");
     const baseText = el.getAttribute("data-block-text");
     const baseSizeRaw = el.getAttribute("data-block-size");
@@ -140,6 +213,26 @@ const parseBlocksFromHtml = (html: string): Block[] => {
     const baseItalic = el.getAttribute("data-block-italic") === "1";
     const baseUnderline = el.getAttribute("data-block-underline") === "1";
     const baseAlign = (el.getAttribute("data-block-align") as AlignType) ?? "left";
+    if (blockType === "verse") {
+      const refsRaw = decodeAttr(el.getAttribute("data-block-refs"));
+      const verseRaw = decodeAttr(el.getAttribute("data-block-verse"));
+      let refs: Block["verseRefs"] = [];
+      if (refsRaw) {
+        try {
+          refs = JSON.parse(refsRaw) as Block["verseRefs"];
+        } catch {
+          refs = [];
+        }
+      }
+      blocks.push({
+        id: buildId(),
+        type: "verse",
+        text: "",
+        verseRefs: refs ?? [],
+        verseText: verseRaw ?? normalizeText(el),
+      });
+      return;
+    }
     if (tag === "h1") {
       blocks.push({
         id: buildId(),
@@ -286,11 +379,17 @@ const parseBlocksFromHtml = (html: string): Block[] => {
   return blocks;
 };
 
-export function BlockNotesEditor({
+export const BlockNotesEditor = forwardRef<BlockNotesEditorHandle, BlockNotesEditorProps>(
+({
   value,
   onChange,
   placeholder = "Start writing…",
-}: BlockNotesEditorProps) {
+  translation = "KJV",
+  onUserEdit,
+  onUserBlur,
+  onFocusChange,
+  onFocusedBlockStyleChange,
+}, ref) => {
   const [blocks, setBlocks] = useState<Block[]>(() =>
     typeof window === "undefined" ? [{ id: buildId(), type: "paragraph", text: "" }] : parseBlocksFromHtml(value)
   );
@@ -302,14 +401,224 @@ export function BlockNotesEditor({
   );
   const [stylePickerBlockId, setStylePickerBlockId] = useState<string | null>(null);
   const [editableBlockId, setEditableBlockId] = useState<string | null>(null);
+  const pendingVerseLookup = useRef<Set<string>>(new Set());
   const lastValueRef = useRef(value);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const blockRefs = useRef<Record<string, HTMLElement | null>>({});
+  const lastPointerTypeRef = useRef<Record<string, string | null>>({});
+  const penFocusForcedRef = useRef<Record<string, boolean>>({});
+  const lastRenderedTextRef = useRef<Record<string, string>>({});
+  const pendingSyncTimeoutsRef = useRef<Record<string, number>>({});
+  const pendingTextRef = useRef<Record<string, string>>({});
   const styleButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const styleMenuRef = useRef<HTMLDivElement | null>(null);
   const ignoreBlurRef = useRef(false);
-  const bgColors = ["#fde68a", "#bfdbfe", "#bbf7d0"];
+  const bgColors = NOTE_BLOCK_COLORS;
   const textColors = ["#ffffff", "#111827"];
+  const isIOS = useMemo(() => {
+    if (typeof navigator === "undefined") return false;
+    return (
+      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+    );
+  }, []);
+
+  const normalizeBook = useCallback(
+    (name: string) => name.replace(/[^a-z0-9]/gi, "").toLowerCase(),
+    []
+  );
+
+  const findBookName = useCallback(
+    (raw: string) => {
+      const target = normalizeBook(raw);
+      return (
+        bibleBooks.find(({ name }) =>
+          normalizeBook(name).startsWith(target)
+        )?.name || null
+      );
+    },
+    [normalizeBook]
+  );
+
+  const parseReference = useCallback(
+    (text: string) => {
+      const regex = /([1-3]?\s*[A-Za-z]+)\s+(\d+)(?::([0-9,\-\s;]+))?/;
+      const match = text.match(regex);
+      if (!match || match.index === undefined) return null;
+      const [, bookRaw, chapterStr, versesRaw] = match;
+      const book = findBookName(bookRaw);
+      if (!book || !versesRaw) return null;
+      const chapter = Number(chapterStr);
+      if (!Number.isFinite(chapter)) return null;
+
+      const refs: { book: string; chapter: number; verse: number; endVerse?: number }[] =
+        [];
+      const segments = versesRaw.split(/[;,]/).map((seg) => seg.trim()).filter(Boolean);
+      if (!segments.length) return null;
+
+      for (const segment of segments) {
+        const rangeMatch = segment.match(/^(\d+)\s*-\s*(\d+)$/);
+        if (rangeMatch) {
+          const start = Number(rangeMatch[1]);
+          const end = Number(rangeMatch[2]);
+          if (Number.isFinite(start) && Number.isFinite(end)) {
+            refs.push({
+              book,
+              chapter,
+              verse: Math.min(start, end),
+              endVerse: Math.max(start, end),
+            });
+          }
+          continue;
+        }
+        const single = Number(segment);
+        if (Number.isFinite(single)) {
+          refs.push({ book, chapter, verse: single });
+        }
+      }
+
+      if (!refs.length) return null;
+      return {
+        refs,
+        matchStart: match.index,
+        matchEnd: match.index + match[0].length,
+      };
+    },
+    [findBookName]
+  );
+
+  const refsEqual = useCallback(
+    (
+      left: { book: string; chapter: number; verse: number; endVerse?: number }[] = [],
+      right: { book: string; chapter: number; verse: number; endVerse?: number }[] = []
+    ) => {
+      if (left.length !== right.length) return false;
+      return left.every((ref, index) => {
+        const other = right[index];
+        return (
+          ref.book === other.book &&
+          ref.chapter === other.chapter &&
+          ref.verse === other.verse &&
+          ref.endVerse === other.endVerse
+        );
+      });
+    },
+    []
+  );
+
+  const buildVerseText = useCallback(
+    async (refs: { book: string; chapter: number; verse: number; endVerse?: number }[]) => {
+      const grouped = new Map<string, { book: string; chapter: number; refs: typeof refs }>();
+      for (const ref of refs) {
+        const key = `${ref.book}-${ref.chapter}`;
+        const existing = grouped.get(key);
+        if (existing) {
+          existing.refs.push(ref);
+        } else {
+          grouped.set(key, { book: ref.book, chapter: ref.chapter, refs: [ref] });
+        }
+      }
+
+      const lines: string[] = [];
+      for (const group of grouped.values()) {
+        const verses = (await getVersesByChapter(
+          group.book,
+          group.chapter,
+          translation
+        )) as BibleVerseWithTokens[];
+        for (const ref of group.refs) {
+          const start = ref.verse;
+          const end = ref.endVerse ?? ref.verse;
+          const slice = verses.filter(
+            (v) => v.verse >= start && v.verse <= end
+          );
+          for (const verse of slice) {
+            lines.push(`${verse.verse} ${verse.text}`);
+          }
+        }
+      }
+
+      return lines.join("\n");
+    },
+    [translation]
+  );
+
+  const commitBlockIfReference = useCallback(
+    (blockId: string, text: string) => {
+      if (!text || pendingVerseLookup.current.has(blockId)) return false;
+      const parsed = parseReference(text);
+      if (!parsed) return false;
+
+      pendingVerseLookup.current.add(blockId);
+      const { refs } = parsed;
+      (async () => {
+        try {
+          const verseText = (await buildVerseText(refs)).trim();
+          setBlocks((prev) => {
+            const index = prev.findIndex((block) => block.id === blockId);
+            if (index === -1) return prev;
+            const current = prev[index];
+            if (!current || current.type === "verse") return prev;
+            const nextBlocks = prev.slice();
+            const next = prev[index + 1];
+            if (current.linkedVerseId) {
+              const verseIndex = nextBlocks.findIndex(
+                (block) => block.id === current.linkedVerseId
+              );
+              if (verseIndex !== -1) {
+                const updatedVerse: Block = {
+                  ...nextBlocks[verseIndex],
+                  type: "verse",
+                  verseRefs: refs,
+                  verseText: verseText || "Verse not found.",
+                };
+                nextBlocks[verseIndex] = updatedVerse;
+                if (verseIndex !== index + 1) {
+                  nextBlocks.splice(verseIndex, 1);
+                  const insertAt = verseIndex < index + 1 ? index : index + 1;
+                  nextBlocks.splice(insertAt, 0, updatedVerse);
+                }
+                return nextBlocks;
+              }
+            }
+
+            if (next?.type === "verse" && refsEqual(next.verseRefs ?? [], refs)) {
+              nextBlocks[index] = { ...current, linkedVerseId: next.id };
+              return nextBlocks;
+            }
+
+            const verseBlockId = buildId();
+            const verseBlock: Block = {
+              id: verseBlockId,
+              type: "verse",
+              text: "",
+              verseRefs: refs,
+              verseText: verseText || "Verse not found.",
+            };
+            nextBlocks[index] = { ...current, linkedVerseId: verseBlockId };
+            nextBlocks.splice(index + 1, 0, verseBlock);
+            return nextBlocks;
+          });
+        } finally {
+          pendingVerseLookup.current.delete(blockId);
+        }
+      })();
+      return true;
+    },
+    [buildVerseText, parseReference, refsEqual]
+  );
+
+  const removeLinkedVerseBlock = useCallback((blockId: string) => {
+    setBlocks((prev) => {
+      const source = prev.find((block) => block.id === blockId);
+      if (!source?.linkedVerseId) return prev;
+      const next = prev.filter((block) => block.id !== source.linkedVerseId);
+      if (next.length === prev.length) return prev;
+      return next.map((block) =>
+        block.id === blockId ? { ...block, linkedVerseId: undefined } : block
+      );
+    });
+  }, []);
 
   const slashItems = useMemo<SlashItem[]>(
     () => [
@@ -447,32 +756,24 @@ export function BlockNotesEditor({
     });
   }, []);
 
-  const getBlockText = useCallback((element: HTMLElement) => {
-    return (element.innerText ?? "")
-      .replace(/\u200E/g, "")
-      .replace(/\u200B/g, "")
-      .replace(/\r/g, "");
-  }, []);
+const getBlockText = useCallback((element: HTMLElement) => {
+  const raw = isIOS
+    ? (element.textContent ?? "")
+    : (element.innerText ?? element.textContent ?? "");
+  return raw
+    .replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, "")
+    .replace(/\u200B/g, "")
+    .replace(/\r/g, "");
+}, [isIOS]);
 
-  const normalizeLtr = useCallback((element: HTMLElement) => {
-    const text = element.textContent ?? "";
-    const cleaned = text.replace(/[\u200E\u200F\u202A-\u202E]/g, "");
-    if (!cleaned) {
-      element.textContent = "";
-      return;
-    }
-    element.textContent = `\u200E${cleaned}`;
+const normalizeSingleLine = (value: string) => value.replace(/[\r\n]+/g, " ");
+
+  const placeCaretAtEnd = useCallback((element: HTMLElement) => {
     const selection = window.getSelection();
     if (!selection) return;
-    const node = element.firstChild;
-    if (!node) return;
     const range = document.createRange();
-    const caretPos = Math.min(
-      (node.textContent?.length ?? 1),
-      Math.max(1, (selection.focusOffset ?? 0) + 1)
-    );
-    range.setStart(node, caretPos);
-    range.collapse(true);
+    range.selectNodeContents(element);
+    range.collapse(false);
     selection.removeAllRanges();
     selection.addRange(range);
   }, []);
@@ -482,8 +783,10 @@ export function BlockNotesEditor({
     const el = blockRefs.current[blockId];
     if (!el) return;
     el.focus();
-    normalizeLtr(el);
     if (typeof offset === "number") {
+      const rawText = stripLtrMarkers(el.textContent ?? "");
+      const hasMarkers = (el.textContent ?? "").startsWith(LTR_ISOLATE);
+      const resolvedOffset = toDomOffset(rawText, offset, hasMarkers);
       const selection = window.getSelection();
       if (!selection) return;
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
@@ -491,9 +794,9 @@ export function BlockNotesEditor({
       let node = walker.nextNode();
       while (node) {
         const length = node.textContent?.length ?? 0;
-        if (currentOffset + length >= offset) {
+        if (currentOffset + length >= resolvedOffset) {
           const range = document.createRange();
-          range.setStart(node, Math.max(0, offset - currentOffset));
+          range.setStart(node, Math.max(0, resolvedOffset - currentOffset));
           range.collapse(true);
           selection.removeAllRanges();
           selection.addRange(range);
@@ -510,7 +813,7 @@ export function BlockNotesEditor({
     range.collapse(false);
     selection.removeAllRanges();
     selection.addRange(range);
-  }, [normalizeLtr]);
+  }, []);
 
   useEffect(() => {
     if (editableBlockId) {
@@ -526,18 +829,23 @@ export function BlockNotesEditor({
     const preRange = range.cloneRange();
     preRange.selectNodeContents(element);
     preRange.setEnd(range.startContainer, range.startOffset);
-    return preRange.toString().length;
+    const offset = stripLtrMarkers(preRange.toString()).length;
+    return offset;
   }, []);
 
-  const handleInput = useCallback(
-    (blockId: string, element: HTMLElement) => {
-      const text = getBlockText(element);
+  const syncBlockText = useCallback(
+    (blockId: string, text: string) => {
+      onUserEdit?.();
+      const normalizedText = normalizeSingleLine(text);
       setBlocks((prev) =>
         prev.map((block) =>
-          block.id === blockId ? { ...block, text } : block
+          block.id === blockId ? { ...block, text: normalizedText } : block
         )
       );
-      const match = text.match(/^\/(\S*)$/);
+      if (!parseReference(normalizedText)) {
+        removeLinkedVerseBlock(blockId);
+      }
+      const match = normalizedText.match(/^\/(\S*)$/);
       if (match) {
         setSlashBlockId(blockId);
         setSlashQuery(match[1] ?? "");
@@ -548,7 +856,63 @@ export function BlockNotesEditor({
         setSlashPosition(null);
       }
     },
-    [getBlockText, slashBlockId, updateSlashPosition]
+    [onUserEdit, parseReference, removeLinkedVerseBlock, slashBlockId, updateSlashPosition]
+  );
+
+  const clearPendingSync = useCallback((blockId: string) => {
+    const pending = pendingSyncTimeoutsRef.current[blockId];
+    if (pending) {
+      window.clearTimeout(pending);
+      pendingSyncTimeoutsRef.current[blockId] = 0;
+    }
+  }, []);
+
+  const scheduleBlockSync = useCallback(
+    (blockId: string, text: string) => {
+      pendingTextRef.current[blockId] = text;
+      clearPendingSync(blockId);
+      pendingSyncTimeoutsRef.current[blockId] = window.setTimeout(() => {
+        const pendingText = pendingTextRef.current[blockId] ?? "";
+        syncBlockText(blockId, pendingText);
+      }, 300);
+    },
+    [clearPendingSync, syncBlockText]
+  );
+
+  const flushBlockSync = useCallback(
+    (blockId: string) => {
+      clearPendingSync(blockId);
+      const el = blockRefs.current[blockId];
+      if (!el) return;
+      const latestText = getBlockText(el);
+      syncBlockText(blockId, latestText);
+      commitBlockIfReference(blockId, latestText);
+    },
+    [clearPendingSync, commitBlockIfReference, getBlockText, syncBlockText]
+  );
+
+  useEffect(() => {
+    if (!focusedBlockId) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const container = containerRef.current;
+      if (!container) return;
+      if (container.contains(event.target as Node)) return;
+      flushBlockSync(focusedBlockId);
+      setFocusedBlockId(null);
+      setStylePickerBlockId(null);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [focusedBlockId, flushBlockSync]);
+
+  const handleInput = useCallback(
+    (blockId: string, element: HTMLElement) => {
+      const text = normalizeSingleLine(getBlockText(element));
+      scheduleBlockSync(blockId, text);
+    },
+    [getBlockText, scheduleBlockSync]
   );
 
   const insertBlockAfter = useCallback(
@@ -583,6 +947,10 @@ export function BlockNotesEditor({
         if (prev.length === 1) return prev.map((block) => ({ ...block, text: "" }));
         const index = prev.findIndex((block) => block.id === blockId);
         const next = prev.filter((block) => block.id !== blockId);
+        const removed = prev[index];
+        if (removed?.linkedVerseId) {
+          return next.filter((block) => block.id !== removed.linkedVerseId);
+        }
         const target = next[Math.max(0, index - 1)];
         requestAnimationFrame(() => {
           if (target) focusBlock(target.id);
@@ -595,36 +963,11 @@ export function BlockNotesEditor({
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>, block: Block) => {
-      if (event.key === "Enter" && event.shiftKey) {
-        event.preventDefault();
-        const element = event.currentTarget;
-        const text = getBlockText(element);
-        const offset = getCaretOffset(element) ?? text.length;
-        const nextText = `${text.slice(0, offset)}\n${text.slice(offset)}`;
-        setBlocks((prev) =>
-          prev.map((item) =>
-            item.id === block.id ? { ...item, text: nextText } : item
-          )
-        );
-        requestAnimationFrame(() => focusBlock(block.id, offset + 1));
-        return;
-      }
       if (event.key === "Enter") {
         event.preventDefault();
-        const element = event.currentTarget;
-        const text = getBlockText(element);
-        const offset = getCaretOffset(element) ?? text.length;
-        const before = text.slice(0, offset);
-        const after = text.slice(offset);
-        setBlocks((prev) =>
-          prev.map((item) =>
-            item.id === block.id ? { ...item, text: before } : item
-          )
-        );
-        insertBlockAfter(block.id, after, {
-          bgColor: block.bgColor,
-          textColor: block.textColor,
-        });
+        flushBlockSync(block.id);
+        insertBlockAfter(block.id, "");
+        return;
       }
       if (event.key === "Backspace") {
         const element = event.currentTarget;
@@ -639,8 +982,55 @@ export function BlockNotesEditor({
         setSlashPosition(null);
       }
     },
-    [focusBlock, getBlockText, getCaretOffset, insertBlockAfter, removeBlock]
+    [clearPendingSync, commitBlockIfReference, getBlockText, insertBlockAfter, removeBlock, syncBlockText]
   );
+
+  useImperativeHandle(ref, () => ({
+    applyFormat: (command: NotesFormatCommand) => {
+      if (!focusedBlockId) return;
+      setBlocks((prev) =>
+        prev.map((block) => {
+          if (block.id !== focusedBlockId || block.type === "verse") return block;
+          switch (command.type) {
+            case "setBlockType":
+              return { ...block, type: command.blockType };
+            case "toggleBold":
+              return { ...block, isBold: !block.isBold };
+            case "toggleItalic":
+              return { ...block, isItalic: !block.isItalic };
+            case "toggleUnderline":
+              return { ...block, isUnderline: !block.isUnderline };
+            case "setBlockColor":
+              return { ...block, bgColor: command.color };
+            default:
+              return block;
+          }
+        })
+      );
+    },
+  }), [focusedBlockId]);
+
+  useEffect(() => {
+    if (!onFocusedBlockStyleChange) return;
+    const current =
+      focusedBlockId ? blocks.find((block) => block.id === focusedBlockId) ?? null : null;
+    if (!current || current.type === "verse") {
+      onFocusedBlockStyleChange(null);
+      return;
+    }
+    onFocusedBlockStyleChange({
+      type: current.type,
+      isBold: current.isBold,
+      isItalic: current.isItalic,
+      isUnderline: current.isUnderline,
+      bgColor: current.bgColor ?? null,
+    });
+  }, [blocks, focusedBlockId, onFocusedBlockStyleChange]);
+
+  useEffect(() => {
+    if (!onFocusChange) return;
+    onFocusChange(Boolean(focusedBlockId));
+  }, [focusedBlockId, onFocusChange]);
 
   const applySlashItem = useCallback(
     (item: SlashItem) => {
@@ -661,7 +1051,10 @@ export function BlockNotesEditor({
   );
 
   const renderBlock = (block: Block, index: number) => {
-    const baseClass = "rounded-md px-2 py-1 outline-none";
+    if (block.type === "verse") {
+      return null;
+    }
+    const baseClass = "rounded-md px-2 py-1 outline-none whitespace-nowrap";
     const typeClass =
       block.type === "heading1"
         ? "text-4xl font-semibold"
@@ -708,7 +1101,7 @@ export function BlockNotesEditor({
             {orderedLabel}
           </span>
         )}
-        {focusedBlockId === block.id && (
+        {false && focusedBlockId === block.id && (
           <div className="absolute bottom-1 left-1 z-10">
             <button
               ref={(el) => {
@@ -741,74 +1134,118 @@ export function BlockNotesEditor({
           style={alignStyle}
           dir="ltr"
         >
-          <span
-            ref={(el) => {
-              blockRefs.current[block.id] = el;
-            }}
-            contentEditable
-            suppressContentEditableWarning
-            spellCheck
-            className="inline-block min-h-[1em] min-w-[0.5ch] whitespace-pre-wrap break-words outline-none focus:outline-none"
-            style={{
-              ...highlightStyle,
-              ...textStyle,
-              ...sizeStyle,
-              ...weightStyle,
-              ...italicStyle,
-              ...underlineStyle,
-              caretColor: "currentColor",
-              direction: "ltr",
-              textAlign: "left",
-              unicodeBidi: "isolate-override",
-              writingMode: "horizontal-tb",
-            }}
-            data-block-id={block.id}
-            data-placeholder={placeholder}
-            tabIndex={0}
-            dir="ltr"
-            onFocus={(event) => {
-              setEditableBlockId(block.id);
-              setFocusedBlockId(block.id);
-              normalizeLtr(event.currentTarget);
-            }}
-            onBlur={(event) => {
-              if (event.currentTarget.contains(event.relatedTarget as Node)) return;
-              if (stylePickerBlockId === block.id) return;
-              if (ignoreBlurRef.current) return;
-              if (!block.text.trim() && index > 0) {
-                setBlocks((prev) => prev.filter((item) => item.id !== block.id));
-              }
-              setFocusedBlockId(null);
-              setStylePickerBlockId(null);
-              if (!block.text.trim()) {
-                setEditableBlockId(null);
-              }
-            }}
-            onBeforeInput={(event) => {
-              if (stylePickerBlockId === block.id || editableBlockId !== block.id) {
-                event.preventDefault();
-              }
-            }}
-            onInput={(event) => {
-              normalizeLtr(event.currentTarget);
-              handleInput(block.id, event.currentTarget);
-            }}
-            onKeyDown={(event) => {
-              if (stylePickerBlockId === block.id) {
-                event.preventDefault();
-                event.stopPropagation();
-                return;
-              }
-              handleKeyDown(event, block);
-            }}
-            onPaste={(event) => {
-              if (stylePickerBlockId === block.id) {
-                event.preventDefault();
-              }
-            }}
-          >
-            {block.text || "\u200B"}
-          </span>
+          {(() => {
+            const EditableTag = "bdo";
+            const isFocused = focusedBlockId === block.id;
+            if (!isFocused) {
+              lastRenderedTextRef.current[block.id] = block.text;
+            }
+            const renderText = isFocused
+              ? (lastRenderedTextRef.current[block.id] ?? block.text)
+              : block.text;
+            const displayText = renderText
+              ? (isIOS ? stripLtrMarkers(renderText) : applyLtrMarkers(renderText))
+              : "\u200B";
+            const editableNode = (
+              <EditableTag
+                ref={(el) => {
+                  blockRefs.current[block.id] = el;
+                }}
+                contentEditable
+                suppressContentEditableWarning
+                spellCheck
+                className="block min-h-[1em] w-full min-w-[0.5ch] whitespace-nowrap overflow-x-auto outline-none focus:outline-none"
+                style={{
+                  ...highlightStyle,
+                  ...textStyle,
+                  ...sizeStyle,
+                  ...weightStyle,
+                  ...italicStyle,
+                  ...underlineStyle,
+                  caretColor: "currentColor",
+                  direction: "ltr",
+                  textAlign: "left",
+                  lineHeight: "1.15",
+                  unicodeBidi: "bidi-override",
+                  writingMode: "horizontal-tb",
+                }}
+                data-block-id={block.id}
+                data-placeholder={placeholder}
+                tabIndex={0}
+                dir="ltr"
+                lang="en"
+                onFocus={(event) => {
+                  setEditableBlockId(block.id);
+                  setFocusedBlockId(block.id);
+                  const el = event.currentTarget;
+                  const text = el.textContent ?? "";
+                  if (text.startsWith("\u200F")) {
+                    el.textContent = text.replace(/^\u200F+/, "");
+                  }
+                  if (
+                    isIOS &&
+                    lastPointerTypeRef.current[block.id] === "pen" &&
+                    !penFocusForcedRef.current[block.id]
+                  ) {
+                    const selection = window.getSelection();
+                    if (selection && selection.rangeCount > 0 && selection.isCollapsed) {
+                      placeCaretAtEnd(el);
+                      penFocusForcedRef.current[block.id] = true;
+                    }
+                  }
+                }}
+                onPointerDown={(event) => {
+                  lastPointerTypeRef.current[block.id] = event.pointerType ?? null;
+                }}
+                onBlur={(event) => {
+                  if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+                  if (stylePickerBlockId === block.id) return;
+                  if (ignoreBlurRef.current) return;
+                  onUserBlur?.();
+                  flushBlockSync(block.id);
+                  lastPointerTypeRef.current[block.id] = null;
+                  penFocusForcedRef.current[block.id] = false;
+                  const latestText = getBlockText(event.currentTarget);
+                  if (!latestText.trim() && index > 0) {
+                    setBlocks((prev) => prev.filter((item) => item.id !== block.id));
+                  }
+                  setFocusedBlockId(null);
+                  setStylePickerBlockId(null);
+                  if (!latestText.trim()) {
+                    setEditableBlockId(null);
+                  }
+                }}
+                onBeforeInput={(event) => {
+                  if (stylePickerBlockId === block.id || editableBlockId !== block.id) {
+                    event.preventDefault();
+                    return;
+                  }
+                  if (!isIOS) return;
+                  return;
+                }}
+                onInput={(event) => {
+                  handleInput(block.id, event.currentTarget);
+                }}
+                onKeyDown={(event) => {
+                  if (stylePickerBlockId === block.id) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                  }
+                  handleKeyDown(event, block);
+                }}
+                onPaste={(event) => {
+                  if (stylePickerBlockId === block.id) {
+                    event.preventDefault();
+                  }
+                }}
+              >
+                {displayText}
+              </EditableTag>
+            );
+
+            return editableNode;
+          })()}
         </div>
       </div>
     );
@@ -817,11 +1254,24 @@ export function BlockNotesEditor({
   return (
     <div
       ref={containerRef}
-      className="block-notes-editor relative space-y-3 pb-6"
+      className={`block-notes-editor relative space-y-3 pb-6${
+        isIOS ? " block-notes-editor--ios" : ""
+      }`}
       dir="ltr"
-      style={{ direction: "ltr" }}
+      style={{ direction: "ltr", textAlign: "left" }}
+      lang="en"
+      onPointerDownCapture={(event) => {
+        if (!focusedBlockId) return;
+        const focusedEl = blockRefs.current[focusedBlockId];
+        if (!focusedEl) return;
+        if (focusedEl.contains(event.target as Node)) return;
+        flushBlockSync(focusedBlockId);
+      }}
       onPointerDown={(event) => {
         if (event.target !== containerRef.current) return;
+        if (focusedBlockId) {
+          flushBlockSync(focusedBlockId);
+        }
         const lastId = blocks[blocks.length - 1]?.id;
         if (lastId) insertBlockAfter(lastId);
       }}
@@ -1204,4 +1654,4 @@ export function BlockNotesEditor({
       )}
     </div>
   );
-}
+});

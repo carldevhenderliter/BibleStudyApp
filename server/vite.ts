@@ -68,7 +68,12 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  const distPath = path.resolve(import.meta.dirname, "public");
+  const distPath = path.resolve(import.meta.dirname, "..", "dist", "public");
+  const rawBasePath = process.env.BASE_PATH || "/";
+  const basePath =
+    rawBasePath === "/"
+      ? "/"
+      : `/${rawBasePath.replace(/^\/+|\/+$/g, "")}`;
 
   if (!fs.existsSync(distPath)) {
     throw new Error(
@@ -76,10 +81,22 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  if (basePath === "/") {
+    app.use(express.static(distPath));
+    app.use("*", (_req, res) => {
+      res.sendFile(path.resolve(distPath, "index.html"));
+    });
+    return;
+  }
 
-  // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
+  app.get("/", (_req, res) => {
+    res.redirect(basePath);
+  });
+  app.use(basePath, express.static(distPath));
+  app.get(basePath, (_req, res) => {
+    res.sendFile(path.resolve(distPath, "index.html"));
+  });
+  app.use(`${basePath}/*`, (_req, res) => {
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
