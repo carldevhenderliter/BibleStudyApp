@@ -1,5 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { BlockNotesEditor } from "./BlockNotesEditor";
+import {
+  BlockNotesEditor,
+  type BlockNotesEditorHandle,
+  type FocusedBlockStyle,
+  type NotesFormatCommand,
+  NOTE_BLOCK_COLORS,
+} from "./BlockNotesEditor";
 import type { DragEvent } from "react";
 import { BibleVerse, Highlight, Note } from "@shared/schema";
 import { VerseDisplay } from "./VerseDisplay";
@@ -206,6 +212,18 @@ const findBookName = (raw: string) => {
   );
 };
 
+const decodeAttr = (value: string | null) => (value ? decodeURIComponent(value) : null);
+
+const formatVerseRef = (verse: BibleVerseWithTokens) =>
+  `${verse.book} ${verse.chapter}:${verse.verse}`;
+
+const fontFamilyMap: Record<"serif" | "sans" | "mono" | "gentium", string> = {
+  serif: "var(--font-serif)",
+  gentium: "var(--font-gentium)",
+  sans: "var(--font-sans)",
+  mono: "var(--font-mono)",
+};
+
 // Theme → border accent classes (works in dark & light)
 const noteThemeBorderClasses: Record<NoteTheme, string> = {
   yellow: "border-amber-500/70",
@@ -266,6 +284,10 @@ export function BibleReader({
   const [notesPanelTab, setNotesPanelTab] = useState<
     "notes" | "definition" | "occurrences"
   >("notes");
+  const [definitionQuery, setDefinitionQuery] = useState("");
+  const [mainVerseTab, setMainVerseTab] = useState<"reading" | "noteRefs">(
+    "reading"
+  );
   const [inkTool, setInkTool] = useState<InkTool>("select");
   const [inkColor, setInkColor] = useState("#facc15");
   const [penCustomColor, setPenCustomColor] = useState("#facc15");
@@ -310,7 +332,6 @@ export function BibleReader({
   const [strongOccurrences, setStrongOccurrences] =
     useState<StrongOccurrence[]>([]);
   const [isScanningOccurrences, setIsScanningOccurrences] = useState(false);
-  const [showOccurrences, setShowOccurrences] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchPreview, setSearchPreview] = useState<{
     ref: string;
@@ -358,6 +379,7 @@ export function BibleReader({
   const inkScrollHideTimeoutRef = useRef<number | null>(null);
   const prevStrongNumberRef = useRef<string | null>(null);
   const eraserCursorRef = useRef<HTMLDivElement | null>(null);
+  const lastAutoStrongVerseIdRef = useRef<string | null>(null);
 
   const hasSelectedStrong = !!selectedStrong;
   const { toast } = useToast();
@@ -834,6 +856,7 @@ export function BibleReader({
   }, [book, chapterStack, flattenChapters, isLoadingPrevChapter, selectedTranslation]);
 
   const updateActiveVerseFromScroll = useCallback(() => {
+    if (mainVerseTab === "noteRefs") return;
     const vp = scrollViewportRef.current;
     if (!vp) return;
 
@@ -860,7 +883,7 @@ export function BibleReader({
     if (bestId && bestId !== activeNotesVerseId) {
       setActiveNotesVerseId(bestId);
     }
-  }, [activeNotesVerseId]);
+  }, [activeNotesVerseId, mainVerseTab]);
 
   const handleScroll = useCallback(() => {
     const vp = scrollViewportRef.current;
@@ -2628,16 +2651,73 @@ export function BibleReader({
     );
   };
 
+  const scanStrongOccurrences = useCallback(
+    async (strongCode: string) => {
+      const normalized = strongCode.toUpperCase().trim();
+      setIsScanningOccurrences(true);
+      setStrongOccurrences([]);
+
+      const allOccurrences: StrongOccurrence[] = [];
+
+      for (const entry of NT_BOOK_CHAPTERS) {
+        for (let ch = 1; ch <= entry.chapters; ch++) {
+          try {
+            const chapterVerses = await getVersesByChapter(
+              entry.book,
+              ch,
+              selectedTranslation
+            );
+
+            const asTokens = chapterVerses as BibleVerseWithTokens[];
+
+            for (const v of asTokens) {
+              const verseTokens = v.tokens || [];
+              verseTokens.forEach((token) => {
+                if (!token.strongs) return;
+
+                const strongsArray = Array.isArray(token.strongs)
+                  ? token.strongs
+                  : [token.strongs];
+
+                if (
+                  strongsArray.some(
+                    (s) => s.toUpperCase().trim() === normalized
+                  )
+                ) {
+                  allOccurrences.push({
+                    verseId: v.id,
+                    reference: `${v.book} ${v.chapter}:${v.verse}`,
+                    verseText: v.text,
+                    matchText: token.english,
+                    book: v.book,
+                    chapter: v.chapter,
+                    verse: v.verse,
+                  });
+                }
+              });
+            }
+          } catch (err) {
+            console.warn(
+              `Failed to load occurrences for ${entry.book} ${ch}:`,
+              err
+            );
+            continue;
+          }
+        }
+      }
+
+      setStrongOccurrences(allOccurrences);
+      setIsScanningOccurrences(false);
+    },
+    [selectedTranslation]
+  );
+
   // 🧠 Strong's click: toggle panel + scan NT for occurrences
   const handleStrongClick = async (verseId: string, strongNumber: string) => {
     const normalized = strongNumber.toUpperCase().trim();
 
-    // If you click the same Strong's again, close it
     if (selectedStrong && selectedStrong.strongNumber === normalized) {
-      setSelectedStrong(null);
-      setStrongOccurrences([]);
-      setShowOccurrences(false);
-      setActiveStrongNumber(undefined);
+      setNotesPanelTab("definition");
       return;
     }
 
@@ -2672,62 +2752,85 @@ export function BibleReader({
     });
     setActiveStrongNumber(normalized);
 
-    setIsScanningOccurrences(true);
-    setStrongOccurrences([]);
-    setShowOccurrences(false);
+    await scanStrongOccurrences(normalized);
+  };
 
-    const allOccurrences: StrongOccurrence[] = [];
+  const handleDefinitionLookup = useCallback(
+    async (rawQuery: string) => {
+      const trimmed = rawQuery.trim();
+      if (!trimmed) return;
+      const match = trimmed.match(/^([gh])?\s*0*([0-9]+)$/i);
+      if (!match) return;
 
-    for (const entry of NT_BOOK_CHAPTERS) {
-      for (let ch = 1; ch <= entry.chapters; ch++) {
-        try {
-          const chapterVerses = await getVersesByChapter(
-            entry.book,
-            ch,
-            selectedTranslation
-          );
+      const prefix =
+        match[1]?.toUpperCase() ??
+        selectedStrong?.strongNumber?.[0]?.toUpperCase() ??
+        "G";
+      const code = `${prefix}${match[2]}`;
 
-          const asTokens = chapterVerses as BibleVerseWithTokens[];
+      setSelectedStrong({
+        strongNumber: code,
+        verseReference: `Strong's ${code}`,
+        verseText: "",
+        matchText: "",
+      });
+      setActiveStrongNumber(code);
+      setDefinitionQuery("");
+      void scanStrongOccurrences(code);
 
-          for (const v of asTokens) {
-            const verseTokens = v.tokens || [];
-            verseTokens.forEach((token) => {
-              if (!token.strongs) return;
+      const occurrence = await findFirstStrongOccurrence(code);
+      if (!occurrence) return;
+      setSelectedStrong((prev) => {
+        if (!prev || prev.strongNumber !== code) return prev;
+        return {
+          ...prev,
+          verseReference: `${occurrence.book} ${occurrence.chapter}:${occurrence.verse}`,
+          verseText: occurrence.text,
+          matchText: occurrence.match,
+        };
+      });
+    },
+    [findFirstStrongOccurrence, scanStrongOccurrences, selectedStrong]
+  );
 
-              const strongsArray = Array.isArray(token.strongs)
-                ? token.strongs
-                : [token.strongs];
+  useEffect(() => {
+    if (!activeNotesVerseId) return;
+    if (lastAutoStrongVerseIdRef.current === activeNotesVerseId) return;
+    const verse = verses.find(
+      (v) => v.id === activeNotesVerseId
+    ) as BibleVerseWithTokens | undefined;
+    if (!verse) return;
 
-              if (
-                strongsArray.some(
-                  (s) => s.toUpperCase().trim() === normalized
-                )
-              ) {
-                allOccurrences.push({
-                  verseId: v.id,
-                  reference: `${v.book} ${v.chapter}:${v.verse}`,
-                  verseText: v.text,
-                  matchText: token.english,
-                  book: v.book,
-                  chapter: v.chapter,
-                  verse: v.verse,
-                });
-              }
-            });
-          }
-        } catch (err) {
-          console.warn(
-            `Failed to load occurrences for ${entry.book} ${ch}:`,
-            err
-          );
-          continue;
-        }
+    const tokens = verse.tokens || [];
+    let firstStrong: string | null = null;
+    let matchText = "";
+
+    for (const token of tokens) {
+      if (!token.strongs) continue;
+      const strongsArray = Array.isArray(token.strongs)
+        ? token.strongs
+        : [token.strongs];
+      const first = strongsArray.find((s) => s);
+      if (first) {
+        firstStrong = first.toString().toUpperCase().trim();
+        matchText = token.english;
+        break;
       }
     }
 
-    setStrongOccurrences(allOccurrences);
-    setIsScanningOccurrences(false);
-  };
+    if (!firstStrong) return;
+    lastAutoStrongVerseIdRef.current = activeNotesVerseId;
+
+    setNotesPanelTab("definition");
+    setSelectedStrong({
+      strongNumber: firstStrong,
+      verseReference: `${verse.book} ${verse.chapter}:${verse.verse}`,
+      verseText: verse.text,
+      matchText,
+    });
+    setActiveStrongNumber(firstStrong);
+    void scanStrongOccurrences(firstStrong);
+  }, [activeNotesVerseId, scanStrongOccurrences, verses]);
 
   // Parse "John 3:16" or "1 John 4:8"
   const parseCrossReference = (
@@ -2870,6 +2973,10 @@ export function BibleReader({
   }, [activeNotes, panelVerseId]);
 
   const panelVerse = panelVerseId ? verseById.get(panelVerseId) ?? null : null;
+  const fallbackNoteRefs = useMemo(
+    () => (panelVerse ? [panelVerse as BibleVerseWithTokens] : []),
+    [panelVerse]
+  );
   const panelVerseRef = panelVerse
     ? `${panelVerse.book} ${panelVerse.chapter}:${panelVerse.verse}`
     : "";
@@ -2882,10 +2989,198 @@ export function BibleReader({
   const [panelNoteContent, setPanelNoteContent] = useState(
     activePanelNote?.content ?? ""
   );
+  const notesEditorRef = useRef<BlockNotesEditorHandle | null>(null);
+  const [notesEditorFocused, setNotesEditorFocused] = useState(false);
+  const [focusedBlockStyle, setFocusedBlockStyle] = useState<FocusedBlockStyle | null>(null);
+  const [noteRefEntries, setNoteRefEntries] = useState<
+    {
+      id: string;
+      label: string;
+      verse?: BibleVerseWithTokens;
+      text?: string;
+      isRange: boolean;
+    }[]
+  >([]);
+  const [noteRefsLoading, setNoteRefsLoading] = useState(false);
+  const autosavePendingRef = useRef(false);
+  const lastAutosavedKeyRef = useRef<string>("");
+  const notesDirtyRef = useRef(false);
+
+  const applyNotesFormat = useCallback((command: NotesFormatCommand) => {
+    notesEditorRef.current?.applyFormat(command);
+  }, []);
+
+  const noteVerseBlocks = useMemo(() => {
+    if (typeof window === "undefined") return [];
+    if (!panelNoteContent.trim()) return [];
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(panelNoteContent, "text/html");
+    const verseEls = Array.from(
+      doc.querySelectorAll<HTMLElement>("[data-block-type=\"verse\"]")
+    );
+    return verseEls.map((el, index) => {
+      const refsAttr = decodeAttr(el.getAttribute("data-block-refs"));
+      const verseAttr = decodeAttr(el.getAttribute("data-block-verse"));
+      let refs: { book: string; chapter: number; verse: number; endVerse?: number }[] = [];
+      if (refsAttr) {
+        try {
+          refs = JSON.parse(refsAttr) as {
+            book: string;
+            chapter: number;
+            verse: number;
+            endVerse?: number;
+          }[];
+        } catch (error) {
+          console.warn("Failed to parse verse refs", error);
+        }
+      }
+      return {
+        id: `note-ref-${index}`,
+        refs,
+        verseText: verseAttr ?? "",
+      };
+    });
+  }, [panelNoteContent]);
+
+  const hasNoteRefContent = noteVerseBlocks.length > 0;
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadNoteRefVerses = async () => {
+      if (!noteVerseBlocks.length) {
+        setNoteRefEntries(
+          fallbackNoteRefs.map((verse) => ({
+            id: `note-ref-fallback-${verse.id}`,
+            label: formatVerseRef(verse),
+            verse,
+            isRange: false,
+          }))
+        );
+        setNoteRefsLoading(false);
+        return;
+      }
+      setNoteRefsLoading(true);
+      const chapterCache = new Map<string, BibleVerseWithTokens[]>();
+      const ordered: {
+        id: string;
+        label: string;
+        verse?: BibleVerseWithTokens;
+        text?: string;
+        isRange: boolean;
+      }[] = [];
+      for (const block of noteVerseBlocks) {
+        if (!block.refs.length) continue;
+        for (const ref of block.refs) {
+          const key = `${ref.book}-${ref.chapter}`;
+          if (!chapterCache.has(key)) {
+            const verses = (await getVersesByChapter(
+              ref.book,
+              ref.chapter,
+              selectedTranslation
+            )) as BibleVerseWithTokens[];
+            chapterCache.set(key, verses);
+          }
+          const verses = chapterCache.get(key) ?? [];
+          const start = ref.verse;
+          const end = ref.endVerse ?? ref.verse;
+          const slice = verses.filter((v) => v.verse >= start && v.verse <= end);
+          if (slice.length === 0) {
+            ordered.push({
+              id: `note-ref-${ref.book}-${ref.chapter}-${start}-${end}`,
+              label:
+                start === end
+                  ? `${ref.book} ${ref.chapter}:${start}`
+                  : `${ref.book} ${ref.chapter}:${start}-${end}`,
+              text: "Verse not found.",
+              isRange: start !== end,
+            });
+            continue;
+          }
+          if (start !== end) {
+            const combined = slice
+              .map((v) => `${v.verse} ${v.text}`.trim())
+              .join("\n");
+            ordered.push({
+              id: `note-ref-${ref.book}-${ref.chapter}-${start}-${end}`,
+              label: `${ref.book} ${ref.chapter}:${start}-${end}`,
+              text: combined,
+              isRange: true,
+            });
+            continue;
+          }
+          ordered.push({
+            id: `note-ref-${slice[0].id}`,
+            label: formatVerseRef(slice[0]),
+            verse: slice[0],
+            isRange: false,
+          });
+        }
+      }
+      if (cancelled) return;
+      setNoteRefEntries(ordered);
+      setNoteRefsLoading(false);
+    };
+    loadNoteRefVerses();
+    return () => {
+      cancelled = true;
+    };
+  }, [fallbackNoteRefs, noteVerseBlocks, selectedTranslation]);
   useEffect(() => {
     const nextContent = activePanelNote?.content ?? "";
     setPanelNoteContent(nextContent);
-  }, [activePanelNote?.id]);
+    notesDirtyRef.current = false;
+  }, [activePanelNote?.id, panelVerseId]);
+
+  const handleNotesBlur = useCallback(() => {
+    if (!panelVerseId) return;
+    if (!notesDirtyRef.current) return;
+    if (!panelNoteContent.trim()) {
+      autosavePendingRef.current = false;
+      return;
+    }
+    const baseId = panelVerseId ?? "none";
+    const key = `${baseId}:${panelNoteContent}`;
+    if (key === lastAutosavedKeyRef.current) return;
+
+    if (activePanelNote) {
+      handleUpdateNote(activePanelNote.id, panelNoteContent);
+      lastAutosavedKeyRef.current = key;
+      notesDirtyRef.current = false;
+      return;
+    }
+
+    if (addingNote) {
+      if (addingNote.wordIndex !== undefined) {
+        handleSaveWordNote(addingNote.wordIndex, panelNoteContent);
+      } else {
+        handleSaveNote(panelNoteContent);
+      }
+      lastAutosavedKeyRef.current = key;
+      notesDirtyRef.current = false;
+      return;
+    }
+
+    autosavePendingRef.current = true;
+    setAddingNote({ verseId: panelVerseId });
+  }, [
+    activePanelNote,
+    addingNote,
+    handleSaveNote,
+    handleSaveWordNote,
+    handleUpdateNote,
+    panelNoteContent,
+    panelVerseId,
+  ]);
+
+  useEffect(() => {
+    if (!autosavePendingRef.current) return;
+    if (!addingNote) return;
+    if (!panelNoteContent.trim()) return;
+    handleSaveNote(panelNoteContent);
+    autosavePendingRef.current = false;
+    lastAutosavedKeyRef.current = `${addingNote.verseId}:${panelNoteContent}`;
+    notesDirtyRef.current = false;
+  }, [addingNote, handleSaveNote, panelNoteContent]);
   const noteLinkStartVerseNumber = useMemo(() => {
     if (!effectiveNotesVerseId) return 1;
     const current = verses.find((verse) => verse.id === effectiveNotesVerseId);
@@ -3208,7 +3503,189 @@ export function BibleReader({
                 versesPaneWidth ? { flexBasis: versesPaneWidth, width: versesPaneWidth } : undefined
               }
             >
-              {verses.map((verse) => {
+              <div className="sticky top-0 z-20 mb-3 flex items-center gap-2 bg-background/95 py-2 backdrop-blur">
+                <button
+                  type="button"
+                  className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-wide ${
+                    mainVerseTab === "reading"
+                      ? "border-primary bg-primary/15 text-primary"
+                      : "border-border text-muted-foreground hover:border-primary/60 hover:bg-accent/40"
+                  }`}
+                  onClick={() => setMainVerseTab("reading")}
+                >
+                  Reading
+                </button>
+                <button
+                  type="button"
+                  className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-wide ${
+                    mainVerseTab === "noteRefs"
+                      ? "border-primary bg-primary/15 text-primary"
+                      : "border-border text-muted-foreground hover:border-primary/60 hover:bg-accent/40"
+                  }`}
+                  onClick={() => setMainVerseTab("noteRefs")}
+                >
+                  Note refs
+                </button>
+              </div>
+              {mainVerseTab === "noteRefs" ? (
+                <div className="max-h-[calc(100vh-260px)] overflow-y-auto pr-2 space-y-3">
+                  {noteRefsLoading ? (
+                    <div className="text-sm text-muted-foreground">
+                      Loading verse references…
+                    </div>
+                  ) : noteRefEntries.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">
+                      {hasNoteRefContent
+                        ? "No verse references available."
+                        : "Showing the current verse until you add a note reference."}
+                    </div>
+                  ) : (
+                    noteRefEntries.map((entry, index) => {
+                      if (!entry.verse) {
+                        return (
+                          <div
+                            key={entry.id}
+                            className="mb-6 rounded-xl border border-border/70 bg-card/60 px-4 py-3 shadow-sm"
+                          >
+                            <div className="mb-3 inline-flex items-center rounded-full border border-border/70 bg-background/90 px-2.5 py-0.5 text-[12px] font-semibold text-foreground shadow-sm">
+                              {entry.label}
+                            </div>
+                            <div
+                              className="whitespace-pre-wrap leading-[1.35] text-foreground"
+                              style={{
+                                fontFamily: fontFamilyMap[fontFamily],
+                                fontSize: `${fontSize}px`,
+                              }}
+                            >
+                              {entry.text || "Verse not found."}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      const verse = entry.verse;
+                      const verseHighlight = highlights.find(
+                        (h) => h.verseId === verse.id && h.wordIndex === undefined
+                      );
+                      const wordHighlights = highlights.filter(
+                        (h) => h.verseId === verse.id && h.wordIndex !== undefined
+                      );
+                      const verseWithTokens = verse as BibleVerseWithTokens;
+                      const hasTokens = Boolean(
+                        verseWithTokens.tokens && verseWithTokens.tokens.length > 0
+                      );
+                      const showWordByWord =
+                        hasTokens &&
+                        (showStrongsNumbers ||
+                          showInterlinear ||
+                          showStrongsEnglishOnly ||
+                          hideAllEnglish);
+
+                      const verseNotes = activeNotes.filter((n) => {
+                        if (n.wordIndex !== undefined) return false;
+                        const rn = n as RangeNote;
+                        const anchorVerse = verses.find((v) => v.id === n.verseId);
+                        if (!anchorVerse) return false;
+                        if (
+                          typeof rn.startVerse === "number" &&
+                          typeof rn.endVerse === "number" &&
+                          rn.endVerse > rn.startVerse
+                        ) {
+                          return false;
+                        }
+                        return n.verseId === verse.id;
+                      });
+
+                      const wordNotes = activeNotes.filter(
+                        (n) => n.verseId === verse.id && n.wordIndex !== undefined
+                      );
+
+                      const verseHasNote = showNotes && verseNotes.length > 0;
+                      const verseTheme: NoteTheme | null = verseHasNote
+                        ? verseNotes[0].noteTheme ?? "yellow"
+                        : null;
+                      const verseBorderClass = verseTheme
+                        ? noteThemeBorderClasses[verseTheme]
+                        : "";
+
+                      const rowContainerClass =
+                        displayMode === "book" && !showNotes
+                          ? "inline"
+                          : verseHasNote
+                            ? `md:flex md:items-start md:gap-6 mb-6 rounded-lg border bg-card px-3 py-3 md:px-4 md:py-4 shadow-sm ${verseBorderClass}`
+                            : "md:flex md:items-start md:gap-6 mb-6";
+
+                      return (
+                        <div
+                          key={`${entry.id}-${index}`}
+                          data-verse-id={verse.id}
+                          data-verse-number={verse.verse}
+                          className={rowContainerClass}
+                        >
+                          <div className="mb-2 inline-flex items-center rounded-full border border-border/70 bg-background/80 px-2 py-0.5 text-[12px] font-semibold text-foreground shadow-sm">
+                            {entry.label}
+                          </div>
+                          <div
+                            className={
+                              displayMode === "book" && !showNotes ? "inline" : "flex-1"
+                            }
+                          >
+                            <VerseDisplay
+                              verse={verse}
+                              highlight={verseHighlight}
+                              wordHighlights={wordHighlights}
+                              showStrongsNumbers={showStrongsNumbers}
+                              showInterlinear={showInterlinear}
+                              showStrongsEnglishOnly={showStrongsEnglishOnly}
+                              hideAllEnglish={hideAllEnglish}
+                              showNotes={showNotes}
+                              fontSize={fontSize}
+                              fontFamily={fontFamily}
+                              displayMode={displayMode}
+                              showWordByWord={showWordByWord}
+                              activeStrongNumber={activeStrongNumber}
+                              onAddNote={() => setAddingNote({ verseId: verse.id })}
+                              onAddWordNote={(wordIndex, wordText) =>
+                                handleAddWordNote(verse.id, wordIndex, wordText)
+                              }
+                              onSaveWordNote={(wordIndex, content, options) =>
+                                handleSaveWordNote(wordIndex, content, options)
+                              }
+                              onCancelWordNote={handleCancelWordNote}
+                              onHighlightWord={(wordIndex, wordText, color) =>
+                                handleHighlightWord(
+                                  verse.id,
+                                  wordIndex,
+                                  wordText,
+                                  color as HighlightColor
+                                )
+                              }
+                              onTextSelect={(text) => handleTextSelect(verse.id, text)}
+                              onStrongClick={(strongNumber) =>
+                                handleStrongClick(verse.id, strongNumber)
+                              }
+                              wordNotes={wordNotes}
+                              activeWordNote={
+                                addingNote?.verseId === verse.id &&
+                                addingNote.wordIndex !== undefined
+                                  ? {
+                                      verseId: addingNote.verseId,
+                                      wordIndex: addingNote.wordIndex,
+                                      wordText: addingNote.wordText,
+                                    }
+                                  : null
+                              }
+                              selectedWordIds={lassoSelectedWordIds}
+                              selectedWordsPayload={lassoSelectedPayload}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              ) : (
+                verses.map((verse) => {
             // If this verse is only part of a range and NOT the anchor, skip it
             if (
               rangeCoveredVerseIds.has(verse.id) &&
@@ -3492,7 +3969,8 @@ export function BibleReader({
 
               </div>
             );
-              })}
+              })
+              )}
 
               {verses.length === 0 && (
                 <div className="text-center text-muted-foreground py-12">
@@ -3504,20 +3982,22 @@ export function BibleReader({
               )}
             </div>
 
-            {showNotes && (
-              <div className="flex min-w-0 items-start gap-3 self-start md:sticky md:top-0">
+            {(showNotes || hasSelectedStrong) && (
+              <div className="flex min-w-0 items-start gap-3 self-start md:sticky md:top-4">
                 <div className="flex min-w-0 flex-col items-center gap-2 rounded-full border border-border/60 bg-background/80 px-1.5 py-2 shadow-sm backdrop-blur">
-                  <button
-                    type="button"
-                    className={`rounded-full border px-2 py-2 text-[10px] uppercase tracking-[0.2em] transition [writing-mode:vertical-rl] ${
-                      notesPanelTab === "notes"
-                        ? "border-primary bg-primary/15 text-primary shadow-sm"
-                        : "border-border text-muted-foreground hover:border-primary/60 hover:bg-accent/40"
-                    }`}
-                    onClick={() => setNotesPanelTab("notes")}
-                  >
-                    Notes
-                  </button>
+                  {showNotes && (
+                    <button
+                      type="button"
+                      className={`rounded-full border px-2 py-2 text-[10px] uppercase tracking-[0.2em] transition [writing-mode:vertical-rl] ${
+                        notesPanelTab === "notes"
+                          ? "border-primary bg-primary/15 text-primary shadow-sm"
+                          : "border-border text-muted-foreground hover:border-primary/60 hover:bg-accent/40"
+                      }`}
+                      onClick={() => setNotesPanelTab("notes")}
+                    >
+                      Notes
+                    </button>
+                  )}
                   {hasSelectedStrong && (
                     <>
                       <button
@@ -3547,7 +4027,7 @@ export function BibleReader({
                 </div>
                 <div
                   ref={notesPanelRef}
-                  className="relative mt-0 h-[calc(100vh-220px)] max-h-[calc(100vh-220px)] min-w-0 min-w-[240px] max-w-[60vw] space-y-3 overflow-y-auto overflow-x-hidden pr-2 md:mt-0 md:w-[320px] md:sticky md:top-0 md:h-screen md:max-h-screen lg:w-[380px]"
+                  className="relative mt-0 h-[calc(100vh-220px)] max-h-[calc(100vh-220px)] min-w-[240px] max-w-[60vw] space-y-3 overflow-y-auto overflow-x-hidden pr-2 md:mt-0 md:w-[320px] md:sticky md:top-0 md:h-screen md:max-h-screen lg:w-[380px]"
                   dir="ltr"
                   style={
                     notesPanelWidth
@@ -3571,7 +4051,7 @@ export function BibleReader({
                     };
                   }}
                 />
-                {notesPanelTab === "notes" && (
+                {showNotes && notesPanelTab === "notes" && (
                   <>
                     <div className="sticky top-0 z-20 -mx-2 mb-2 bg-background/95 px-2 py-2 backdrop-blur">
                       <div className="flex flex-wrap items-center gap-2">
@@ -3698,9 +4178,17 @@ export function BibleReader({
                     <div className="relative h-full rounded-xl border border-border/70 bg-card/50 px-3 py-3 overflow-y-auto">
                       <div className="rounded border border-border bg-background px-2 py-2">
                         <BlockNotesEditor
+                          ref={notesEditorRef}
                           value={panelNoteContent}
                           onChange={setPanelNoteContent}
                           placeholder="Start a note or type / for blocks"
+                          translation={selectedTranslation}
+                          onUserEdit={() => {
+                            notesDirtyRef.current = true;
+                          }}
+                          onUserBlur={handleNotesBlur}
+                          onFocusChange={setNotesEditorFocused}
+                          onFocusedBlockStyleChange={setFocusedBlockStyle}
                         />
                       </div>
                       <div className="mt-2 text-[11px] text-muted-foreground">
@@ -3765,7 +4253,22 @@ export function BibleReader({
                         </span>
                       )}
                     </div>
-
+                    <form
+                      className="relative"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void handleDefinitionLookup(definitionQuery);
+                      }}
+                    >
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
+                      <input
+                        type="text"
+                        className="w-full rounded-full border border-border bg-background/80 px-9 py-1.5 text-sm shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                        placeholder="Search Strong's (G3056 / H7225)"
+                        value={definitionQuery}
+                        onChange={(e) => setDefinitionQuery(e.target.value)}
+                      />
+                    </form>
                     <StrongDefinitionInline
                       strongNumber={selectedStrong.strongNumber}
                     />
@@ -3775,9 +4278,6 @@ export function BibleReader({
                         type="button"
                         className="inline-flex items-center gap-1 text-[11px] md:text-xs text-muted-foreground hover:text-primary transition-colors"
                         onClick={() => {
-                          setSelectedStrong(null);
-                          setStrongOccurrences([]);
-                          setShowOccurrences(false);
                           setNotesPanelTab("notes");
                         }}
                       >
@@ -3800,7 +4300,22 @@ export function BibleReader({
                         </span>
                       )}
                     </div>
-
+                    <form
+                      className="relative"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void handleDefinitionLookup(definitionQuery);
+                      }}
+                    >
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
+                      <input
+                        type="text"
+                        className="w-full rounded-full border border-border bg-background/80 px-9 py-1.5 text-sm shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                        placeholder="Search Strong's (G3056 / H7225)"
+                        value={definitionQuery}
+                        onChange={(e) => setDefinitionQuery(e.target.value)}
+                      />
+                    </form>
                     <div className="text-[11px] md:text-xs text-muted-foreground">
                       New Testament occurrences:{" "}
                       {isScanningOccurrences
@@ -3851,8 +4366,6 @@ export function BibleReader({
                         type="button"
                         className="inline-flex items-center gap-1 text-[11px] md:text-xs text-muted-foreground hover:text-primary transition-colors"
                         onClick={() => {
-                          setSelectedStrong(null);
-                          setStrongOccurrences([]);
                           setNotesPanelTab("notes");
                         }}
                       >
@@ -3889,6 +4402,103 @@ export function BibleReader({
 
       <div className="fixed bottom-4 left-1/2 z-50 w-[min(100%-1.5rem,860px)] -translate-x-1/2">
         <div className="relative flex justify-center">
+          {notesEditorFocused && (
+            <div className="absolute bottom-full mb-3 w-[min(100%,860px)]">
+              <div className="rounded-2xl border border-border/70 bg-background/95 px-3 py-2 shadow-xl backdrop-blur">
+                <div className="mb-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                  Notes Format
+                </div>
+                <div
+                  className={`flex flex-wrap items-center gap-2 ${
+                    focusedBlockStyle ? "" : "opacity-50"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    {[
+                      { label: "P", type: "paragraph" as const },
+                      { label: "H1", type: "heading1" as const },
+                      { label: "H2", type: "heading2" as const },
+                      { label: "H3", type: "heading3" as const },
+                      { label: "Q", type: "quote" as const },
+                      { label: "•", type: "bullet" as const },
+                      { label: "1.", type: "ordered" as const },
+                    ].map((item) => (
+                      <button
+                        key={item.label}
+                        type="button"
+                        className={`h-9 min-w-[2.5rem] rounded-full border px-3 text-[11px] font-semibold transition ${
+                          focusedBlockStyle?.type === item.type
+                            ? "border-primary bg-primary/15 text-primary"
+                            : "border-border text-foreground hover:border-primary/60 hover:bg-accent/40"
+                        }`}
+                        onClick={() =>
+                          applyNotesFormat({
+                            type: "setBlockType",
+                            blockType: item.type,
+                          })
+                        }
+                        disabled={!focusedBlockStyle}
+                        aria-label={`Set block type ${item.label}`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mx-1 h-6 w-px bg-border/70" />
+                  {[
+                    { label: "B", type: "toggleBold" as const, active: focusedBlockStyle?.isBold },
+                    { label: "I", type: "toggleItalic" as const, active: focusedBlockStyle?.isItalic },
+                    { label: "U", type: "toggleUnderline" as const, active: focusedBlockStyle?.isUnderline },
+                  ].map((item) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      className={`h-9 min-w-[2.5rem] rounded-full border px-3 text-[11px] font-semibold transition ${
+                        item.active
+                          ? "border-primary bg-primary/15 text-primary"
+                          : "border-border text-foreground hover:border-primary/60 hover:bg-accent/40"
+                      }`}
+                      onClick={() => applyNotesFormat({ type: item.type })}
+                      disabled={!focusedBlockStyle}
+                      aria-label={`Toggle ${item.label}`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                  <div className="mx-1 h-6 w-px bg-border/70" />
+                  <div className="flex items-center gap-2">
+                    {NOTE_BLOCK_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        className={`h-8 w-8 rounded-full border transition ${
+                          focusedBlockStyle?.bgColor === color
+                            ? "border-foreground shadow-md scale-105"
+                            : "border-border/60 hover:scale-105"
+                        }`}
+                        style={{ backgroundColor: color }}
+                        onClick={() =>
+                          applyNotesFormat({ type: "setBlockColor", color })
+                        }
+                        disabled={!focusedBlockStyle}
+                        aria-label={`Set block color ${color}`}
+                      />
+                    ))}
+                    <button
+                      type="button"
+                      className="h-8 min-w-[3rem] rounded-full border border-border px-2 text-[10px] uppercase tracking-wide text-muted-foreground hover:border-primary/60 hover:bg-accent/40"
+                      onClick={() =>
+                        applyNotesFormat({ type: "setBlockColor", color: null })
+                      }
+                      disabled={!focusedBlockStyle}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           {showInkSettings && inkTool !== "select" && (
             <div className="absolute bottom-full mb-3 w-[min(100%,520px)]">
               <div className="rounded-2xl border border-border/70 bg-background/95 px-3 py-2 shadow-xl backdrop-blur">
